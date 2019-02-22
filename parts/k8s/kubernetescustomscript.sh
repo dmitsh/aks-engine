@@ -83,7 +83,7 @@ ensureRPC
 createKubeManifestDir
 if [[ "${SGX_NODE}" = true ]]; then
     if $FULL_INSTALL_REQUIRED; then
-        installSGXDrivers
+        echo "Skipping installSGXDrivers"
     fi
 fi
 
