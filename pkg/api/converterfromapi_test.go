@@ -13,16 +13,16 @@ import (
 func TestConvertCloudProfileToVLabs(t *testing.T) {
 	const (
 		name                         = "AzureStackCloud"
-		managementPortalURL          = "https=//management.local.azurestack.external/"
-		publishSettingsURL           = "https=//management.local.azurestack.external/publishsettings/index"
-		serviceManagementEndpoint    = "https=//management.azurestackci15.onmicrosoft.com/36f71706-54df-4305-9847-5b038a4cf189"
-		resourceManagerEndpoint      = "https=//management.local.azurestack.external/"
-		activeDirectoryEndpoint      = "https=//login.windows.net/"
-		galleryEndpoint              = "https=//portal.local.azurestack.external=30015/"
-		keyVaultEndpoint             = "https=//vault.azurestack.external/"
-		graphEndpoint                = "https=//graph.windows.net/"
-		serviceBusEndpoint           = "https=//servicebus.azurestack.external/"
-		batchManagementEndpoint      = "https=//batch.azurestack.external/"
+		managementPortalURL          = "https://management.local.azurestack.external/"
+		publishSettingsURL           = "https://management.local.azurestack.external/publishsettings/index"
+		serviceManagementEndpoint    = "https://management.azurestackci15.onmicrosoft.com/36f71706-54df-4305-9847-5b038a4cf189"
+		resourceManagerEndpoint      = "https://management.local.azurestack.external/"
+		activeDirectoryEndpoint      = "https://login.windows.net/"
+		galleryEndpoint              = "https://portal.local.azurestack.external=30015/"
+		keyVaultEndpoint             = "https://vault.azurestack.external/"
+		graphEndpoint                = "https://graph.windows.net/"
+		serviceBusEndpoint           = "https://servicebus.azurestack.external/"
+		batchManagementEndpoint      = "https://batch.azurestack.external/"
 		storageEndpointSuffix        = "core.azurestack.external"
 		sqlDatabaseDNSSuffix         = "database.azurestack.external"
 		trafficManagerDNSSuffix      = "trafficmanager.cn"
@@ -31,12 +31,14 @@ func TestConvertCloudProfileToVLabs(t *testing.T) {
 		serviceManagementVMDNSSuffix = "chinacloudapp.cn"
 		resourceManagerVMDNSSuffix   = "cloudapp.azurestack.external"
 		containerRegistryDNSSuffix   = "azurecr.io"
-		tokenAudience                = "https=//management.azurestack.external/"
+		tokenAudience                = "https://management.azurestack.external/"
 	)
 
 	cs := &ContainerService{
 		Properties: &Properties{
 			CustomCloudProfile: &CustomCloudProfile{
+				IdentitySystem:       AzureADIdentitySystem,
+				AuthenticationMethod: ClientSecretAuthMethod,
 				Environment: &azure.Environment{
 					Name:                         name,
 					ManagementPortalURL:          managementPortalURL,
@@ -64,6 +66,13 @@ func TestConvertCloudProfileToVLabs(t *testing.T) {
 	}
 
 	vlabscs := ConvertContainerServiceToVLabs(cs)
+
+	if vlabscs.Properties.CustomCloudProfile.AuthenticationMethod != ClientSecretAuthMethod {
+		t.Errorf("incorrect AuthenticationMethod, expect: '%s', actual: '%s'", ClientSecretAuthMethod, vlabscs.Properties.CustomCloudProfile.AuthenticationMethod)
+	}
+	if vlabscs.Properties.CustomCloudProfile.IdentitySystem != AzureADIdentitySystem {
+		t.Errorf("incorrect IdentitySystem, expect: '%s', actual: '%s'", AzureADIdentitySystem, vlabscs.Properties.CustomCloudProfile.IdentitySystem)
+	}
 	if vlabscs.Properties.CustomCloudProfile.Environment.Name != name {
 		t.Errorf("incorrect Name, expect: '%s', actual: '%s'", name, vlabscs.Properties.CustomCloudProfile.Environment.Name)
 	}
@@ -131,6 +140,8 @@ func TestConvertAzureEnvironmentSpecConfigToVLabs(t *testing.T) {
 	cs := &ContainerService{
 		Properties: &Properties{
 			CustomCloudProfile: &CustomCloudProfile{
+				IdentitySystem:       ADFSIdentitySystem,
+				AuthenticationMethod: ClientCertificateAuthMethod,
 				AzureEnvironmentSpecConfig: &AzureEnvironmentSpecConfig{
 					CloudName: "AzureStackCloud",
 					//DockerSpecConfig specify the docker engine download repo
@@ -182,7 +193,12 @@ func TestConvertAzureEnvironmentSpecConfigToVLabs(t *testing.T) {
 		},
 	}
 	vlabscs := ConvertContainerServiceToVLabs(cs)
-
+	if vlabscs.Properties.CustomCloudProfile.AuthenticationMethod != ClientCertificateAuthMethod {
+		t.Errorf("incorrect AuthenticationMethod, expect: '%s', actual: '%s'", ClientCertificateAuthMethod, vlabscs.Properties.CustomCloudProfile.AuthenticationMethod)
+	}
+	if vlabscs.Properties.CustomCloudProfile.IdentitySystem != ADFSIdentitySystem {
+		t.Errorf("incorrect IdentitySystem, expect: '%s', actual: '%s'", ADFSIdentitySystem, vlabscs.Properties.CustomCloudProfile.IdentitySystem)
+	}
 	csSpec := cs.Properties.CustomCloudProfile.AzureEnvironmentSpecConfig
 	vlabscsSpec := vlabscs.Properties.CustomCloudProfile.AzureEnvironmentSpecConfig
 

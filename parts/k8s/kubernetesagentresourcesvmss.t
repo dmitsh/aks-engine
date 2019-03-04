@@ -55,7 +55,10 @@
     },
     "properties": {
       "singlePlacementGroup": {{UseSinglePlacementGroup .}},
-      "overprovision": false,
+      "overprovision": {{IsVMSSOverProvisioningEnabled}},
+      {{if IsVMSSOverProvisioningEnabled}}
+      "doNotRunExtensionsOnOverprovisionedVMs": true,
+      {{end}}
       "upgradePolicy": {
         "mode": "Manual"
       },
@@ -112,6 +115,9 @@
           {{GetKubernetesAgentCustomData .}}
           "linuxConfiguration": {
               "disablePasswordAuthentication": true,
+              {{if HasMultipleSshKeys }}
+              "ssh": {{ GetSshPublicKeys }}
+              {{ else }}
               "ssh": {
                 "publicKeys": [
                   {
@@ -120,6 +126,7 @@
                   }
                 ]
               }
+              {{ end }}
             }
             {{if HasLinuxSecrets}}
               ,

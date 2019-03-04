@@ -35,12 +35,28 @@ write_files:
   content: !!binary |
     {{WrapAsVariable "provisionConfigs"}}
 
+{{if IsAzureStackCloud}}
+- path: /opt/azure/containers/provision_configs_custom_cloud.sh
+  permissions: "0744"
+  encoding: gzip
+  owner: root
+  content: !!binary |
+    {{WrapAsVariable "provisionConfigsCustomCloud"}}
+{{end}}
+
 - path: /etc/ssh/sshd_config
   permissions: "0644"
   encoding: gzip
   owner: root
   content: !!binary |
     {{WrapAsVariable "sshdConfig"}}
+
+- path: /etc/systemd/system.conf
+  permissions: "0644"
+  encoding: gzip
+  owner: root
+  content: !!binary |
+    {{WrapAsVariable "systemConf"}}
 
 - path: /usr/local/bin/health-monitor.sh
   permissions: "0544"
@@ -131,6 +147,27 @@ write_files:
          "max-file": "5"
       }
     }
+{{end}}
+
+{{if eq .OrchestratorProfile.KubernetesConfig.NetworkPlugin "cilium"}}
+- path: /etc/systemd/system/sys-fs-bpf.mount
+  permissions: "0644"
+  owner: root
+  content: |
+    [Unit]
+    Description=Cilium BPF mounts
+    Documentation=http://docs.cilium.io/
+    DefaultDependencies=no
+    Before=local-fs.target umount.target
+    After=swap.target
+
+    [Mount]
+    What=bpffs
+    Where=/sys/fs/bpf
+    Type=bpf
+
+    [Install]
+    WantedBy=multi-user.target
 {{end}}
 
 - path: /etc/kubernetes/certs/ca.crt
@@ -306,7 +343,7 @@ MASTER_ARTIFACTS_CONFIG_PLACEHOLDER
     sed -i "s|<cloud>|{{WrapAsParameter "kubernetesClusterAutoscalerAzureCloud"}}|g; s|<useManagedIdentity>|{{WrapAsParameter "kubernetesClusterAutoscalerUseManagedIdentity"}}|g" /etc/kubernetes/addons/cluster-autoscaler-deployment.yaml
 {{end}}
 
-{{if eq .OrchestratorProfile.KubernetesConfig.LoadBalancerSku "Standard"}}
+{{if and (not IsPrivateCluster) (eq .OrchestratorProfile.KubernetesConfig.LoadBalancerSku "Standard")}}
     sed -i "s|<svcName>|{{WrapAsParameter "kuberneteselbsvcname"}}|g" "/etc/kubernetes/addons/elb-svc.yaml"
 {{end}}
 
@@ -324,15 +361,6 @@ MASTER_ARTIFACTS_CONFIG_PLACEHOLDER
 {{end}}
 {{if eq .OrchestratorProfile.KubernetesConfig.NetworkPlugin "flannel"}}
     sed -i "s|<kubeClusterCidr>|{{WrapAsParameter "kubeClusterCidr"}}|g" /etc/kubernetes/addons/flannel-daemonset.yaml
-{{end}}
-{{if eq .OrchestratorProfile.KubernetesConfig.NetworkPolicy "cilium"}}
-    a=/etc/kubernetes/addons/cilium-daemonset.yaml
-  {{if IsMasterVirtualMachineScaleSets}}
-    sed -i "s|<ETCD_URL>|"https://$PRIVATE_IP:$ETCD_CLIENT_PORT"|g" $a
-  {{else}}
-    sed -i "s|<ETCD_URL>|{{WrapAsVerbatim "variables('masterEtcdClientURLs')[copyIndex(variables('masterOffset'))]"}}|g" $a
-  {{end}}
-    sed -i "s|<ETCD_CA>|$(base64 -w 0 /etc/kubernetes/certs/ca.crt)|g; s|<ETCD_CLIENT_KEY>|$(base64 -w 0 /etc/kubernetes/certs/etcdclient.key)|g; s|<ETCD_CLIENT_CERT>|$(base64 -w 0 /etc/kubernetes/certs/etcdclient.crt)|g" $a
 {{end}}
 {{if UseCloudControllerManager }}
     sed -i "s|<img>|{{WrapAsParameter "kubernetesCcmImageSpec"}}|g" /etc/kubernetes/manifests/cloud-controller-manager.yaml

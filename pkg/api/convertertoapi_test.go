@@ -129,7 +129,7 @@ func TestOrchestratorVersion(t *testing.T) {
 		Properties: &vlabs.Properties{
 			OrchestratorProfile: &vlabs.OrchestratorProfile{
 				OrchestratorType:    vlabs.Kubernetes,
-				OrchestratorVersion: "1.7.15",
+				OrchestratorVersion: "1.9.11",
 			},
 		},
 	}
@@ -137,7 +137,7 @@ func TestOrchestratorVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to convert ContainerService, error: %s", err)
 	}
-	if cs.Properties.OrchestratorProfile.OrchestratorVersion != "1.7.15" {
+	if cs.Properties.OrchestratorProfile.OrchestratorVersion != "1.9.11" {
 		t.Fatalf("incorrect OrchestratorVersion '%s'", cs.Properties.OrchestratorProfile.OrchestratorVersion)
 	}
 }
@@ -268,16 +268,16 @@ func TestConvertCustomFilesToAPI(t *testing.T) {
 func TestCustomCloudProfile(t *testing.T) {
 	const (
 		name                         = "AzureStackCloud"
-		managementPortalURL          = "https=//management.local.azurestack.external/"
-		publishSettingsURL           = "https=//management.local.azurestack.external/publishsettings/index"
-		serviceManagementEndpoint    = "https=//management.azurestackci15.onmicrosoft.com/36f71706-54df-4305-9847-5b038a4cf189"
-		resourceManagerEndpoint      = "https=//management.local.azurestack.external/"
-		activeDirectoryEndpoint      = "https=//login.windows.net/"
-		galleryEndpoint              = "https=//portal.local.azurestack.external=30015/"
-		keyVaultEndpoint             = "https=//vault.azurestack.external/"
-		graphEndpoint                = "https=//graph.windows.net/"
-		serviceBusEndpoint           = "https=//servicebus.azurestack.external/"
-		batchManagementEndpoint      = "https=//batch.azurestack.external/"
+		managementPortalURL          = "https://management.local.azurestack.external/"
+		publishSettingsURL           = "https://management.local.azurestack.external/publishsettings/index"
+		serviceManagementEndpoint    = "https://management.azurestackci15.onmicrosoft.com/36f71706-54df-4305-9847-5b038a4cf189"
+		resourceManagerEndpoint      = "https://management.local.azurestack.external/"
+		activeDirectoryEndpoint      = "https://login.windows.net/"
+		galleryEndpoint              = "https://portal.local.azurestack.external=30015/"
+		keyVaultEndpoint             = "https://vault.azurestack.external/"
+		graphEndpoint                = "https://graph.windows.net/"
+		serviceBusEndpoint           = "https://servicebus.azurestack.external/"
+		batchManagementEndpoint      = "https://batch.azurestack.external/"
 		storageEndpointSuffix        = "core.azurestack.external"
 		sqlDatabaseDNSSuffix         = "database.azurestack.external"
 		trafficManagerDNSSuffix      = "trafficmanager.cn"
@@ -286,12 +286,14 @@ func TestCustomCloudProfile(t *testing.T) {
 		serviceManagementVMDNSSuffix = "chinacloudapp.cn"
 		resourceManagerVMDNSSuffix   = "cloudapp.azurestack.external"
 		containerRegistryDNSSuffix   = "azurecr.io"
-		tokenAudience                = "https=//management.azurestack.external/"
+		tokenAudience                = "https://management.azurestack.external/"
 	)
 
 	vlabscs := &vlabs.ContainerService{
 		Properties: &vlabs.Properties{
 			CustomCloudProfile: &vlabs.CustomCloudProfile{
+				IdentitySystem:       ADFSIdentitySystem,
+				AuthenticationMethod: ClientCertificateAuthMethod,
 				Environment: &azure.Environment{
 					Name:                         name,
 					ManagementPortalURL:          managementPortalURL,
@@ -320,7 +322,13 @@ func TestCustomCloudProfile(t *testing.T) {
 
 	cs, err := ConvertVLabsContainerService(vlabscs, false)
 	if err != nil {
-		t.Fatalf("failed to convert: '%s'", err)
+		t.Fatalf("Failed to convert ContainerService, error: %s", err)
+	}
+	if cs.Properties.CustomCloudProfile.AuthenticationMethod != ClientCertificateAuthMethod {
+		t.Errorf("incorrect AuthenticationMethod, expect: '%s', actual: '%s'", ClientCertificateAuthMethod, cs.Properties.CustomCloudProfile.AuthenticationMethod)
+	}
+	if cs.Properties.CustomCloudProfile.IdentitySystem != ADFSIdentitySystem {
+		t.Errorf("incorrect IdentitySystem, expect: '%s', actual: '%s'", ADFSIdentitySystem, cs.Properties.CustomCloudProfile.IdentitySystem)
 	}
 	if cs.Properties.CustomCloudProfile.Environment.Name != name {
 		t.Errorf("incorrect Name, expect: '%s', actual: '%s'", name, cs.Properties.CustomCloudProfile.Environment.Name)
@@ -389,6 +397,8 @@ func TestConvertAzureEnvironmentSpecConfig(t *testing.T) {
 	vlabscs := &vlabs.ContainerService{
 		Properties: &vlabs.Properties{
 			CustomCloudProfile: &vlabs.CustomCloudProfile{
+				IdentitySystem:       AzureADIdentitySystem,
+				AuthenticationMethod: ClientSecretAuthMethod,
 				AzureEnvironmentSpecConfig: &vlabs.AzureEnvironmentSpecConfig{
 					CloudName: "AzureStackCloud",
 					//DockerSpecConfig specify the docker engine download repo
@@ -437,9 +447,17 @@ func TestConvertAzureEnvironmentSpecConfig(t *testing.T) {
 			},
 		},
 	}
+
 	cs, err := ConvertVLabsContainerService(vlabscs, false)
 	if err != nil {
 		t.Fatalf("Failed to convert ContainerService, error: %s", err)
+	}
+
+	if cs.Properties.CustomCloudProfile.AuthenticationMethod != ClientSecretAuthMethod {
+		t.Errorf("incorrect AuthenticationMethod, expect: '%s', actual: '%s'", ClientSecretAuthMethod, cs.Properties.CustomCloudProfile.AuthenticationMethod)
+	}
+	if cs.Properties.CustomCloudProfile.IdentitySystem != AzureADIdentitySystem {
+		t.Errorf("incorrect IdentitySystem, expect: '%s', actual: '%s'", AzureADIdentitySystem, cs.Properties.CustomCloudProfile.IdentitySystem)
 	}
 
 	csSpec := cs.Properties.CustomCloudProfile.AzureEnvironmentSpecConfig

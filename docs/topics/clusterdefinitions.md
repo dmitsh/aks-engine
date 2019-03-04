@@ -24,10 +24,10 @@ Here are the valid values for the orchestrator types:
 
 1. `Kubernetes` - this represents the Kubernetes orchestrator.
 
-To learn more about supported orchestrators and versions, run the orchestrators command:
+To learn more about supported versions, run the get-versions command:
 
 ```console
-$ aks-engine orchestrators
+$ aks-engine get-versions
 ```
 
 ### kubernetesConfig
@@ -46,6 +46,7 @@ $ aks-engine orchestrators
 | WindowsNodeBinariesURL          | no       | Windows Kubernetes Node binaries can be provided in the format of Kubernetes release (example: https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG-1.11.md#node-binaries-1). This setting allows overriding the binaries for custom builds.                                                                                                                                                                                                                                                                                         |
 | dnsServiceIP                    | no       | IP address for kube-dns to listen on. If specified must be in the range of `serviceCidr`                                                                                                                                                                                                                                                                                                                      |
 | mobyVersion              | no       | Which version of the Azure Moby build to use in your cluster, e.g. `3.0.3`. Default is `3.0.4`.                           |
+| containerdVersion              | no       | Which version of containerd to use in your cluster, when using a supported containerRuntime scenario; e.g. `1.1.5`. Default is `1.1.5`.                           |
 | dockerBridgeSubnet              | no       | The specific IP and subnet used for allocating IP addresses for the docker bridge network created on the kubernetes master and agents. Default value is 172.17.0.1/16. This value is used to configure the docker daemon using the [--bip flag](https://docs.docker.com/engine/userguide/networking/default_network/custom-docker0)                                                                           |
 | enableAggregatedAPIs            | no       | Enable [Kubernetes Aggregated APIs](https://kubernetes.io/docs/concepts/api-extension/apiserver-aggregation/).This is required by [Service Catalog](https://github.com/kubernetes-incubator/service-catalog/blob/master/README.md). (boolean - default is true for k8s versions greater or equal to 1.9.0, false otherwise)                                                                                                                                              |
 | enableDataEncryptionAtRest      | no       | Enable [kubernetes data encryption at rest](https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data/).This is currently an alpha feature. (boolean - default == false)                                                                                                                                                                                                                               |
@@ -184,7 +185,7 @@ Above you see custom configuration for both tiller and kubernetes-dashboard. Bot
 
 See https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/ for more on Kubernetes resource limits.
 
-Additionally above, we specified a custom docker image for tiller, let's say we want to build a cluster and test an alpha version of tiller in it. **Important note!** customizing the image is not sticky across upgrade/scale, to ensure that aks-engine always delivers a version-curated, known-working addon when moving a cluster to a new version. Considering all that, providing a custom image reference for an addon configuration should be considered for testing/development, but not for a production cluster. If you'd like to entirely customize one of the addons available, including across scale/upgrade operations, you may include in an addon's spec a gzip+base64-encoded (in that order) string of a Kubernetes yaml manifest. E.g.,
+Additionally above, we specified a custom docker image for tiller, let's say we want to build a cluster and test an alpha version of tiller in it. **Important note!** customizing the image is not sticky across upgrade/scale, to ensure that aks-engine always delivers a version-curated, known-working addon when moving a cluster to a new version. Considering all that, providing a custom image reference for an addon configuration should be considered for testing/development, but not for a production cluster. If you'd like to entirely customize one of the addons available, including across scale/upgrade operations, you may include in an addon's spec a base64-encoded string of a Kubernetes yaml manifest. E.g.,
 
 ```
 "kubernetesConfig": {
@@ -198,7 +199,7 @@ Additionally above, we specified a custom docker image for tiller, let's say we 
 }
 ```
 
-The reason for the unsightly gzip+base64 encoded input type is to optimize delivery payload, and to squash a human-maintainable yaml file representation into something that can be tightly pasted into a JSON string value without the arguably more unsightly carriage returns / whitespace that would be delivered with a literal copy/paste of a Kubernetes manifest.
+The reason for the unsightly base64 encoded input type is to optimize delivery payload, and to squash a human-maintainable yaml file representation into something that can be tightly pasted into a JSON string value without the arguably more unsightly carriage returns / whitespace that would be delivered with a literal copy/paste of a Kubernetes manifest.
 
 Finally, the `addons.enabled` boolean property was omitted above; that's by design. If you specify a `containers` configuration, aks-engine assumes you're enabling the addon. The very first example above demonstrates a simple "enable this addon with default configuration" declaration.
 
@@ -271,6 +272,7 @@ Below is a list of kubelet options that aks-engine will configure by default:
 | "--pod-max-pids"                    | "100" (need to activate the feature in --feature-gates=SupportPodPidsLimit=true)                                                                              |
 | "--image-pull-progress-deadline"    | "30m"                                                                                                                                                         |
 | "--feature-gates"                   | No default (can be a comma-separated list). On agent nodes `Accelerators=true` will be applied in the `--feature-gates` option for k8s versions before 1.11.0 |
+| "--enforce-node-allocatable"        | "pods" |
 
 Below is a list of kubelet options that are _not_ currently user-configurable, either because a higher order configuration vector is available that enforces kubelet configuration, or because a static configuration is required to build a functional cluster:
 
@@ -282,7 +284,6 @@ Below is a list of kubelet options that are _not_ currently user-configurable, e
 | "--network-plugin"                           | "cni"                                            |
 | "--node-labels"                              | (based on Azure node metadata)                   |
 | "--cgroups-per-qos"                          | "true"                                           |
-| "--enforce-node-allocatable"                 | "pods"                                           |
 | "--kubeconfig"                               | "/var/lib/kubelet/kubeconfig"                    |
 | "--register-node" (master nodes only)        | "true"                                           |
 | "--register-with-taints" (master nodes only) | "node-role.kubernetes.io/master=true:NoSchedule" |
@@ -526,6 +527,7 @@ We consider `kubeletConfig`, `controllerManagerConfig`, `apiServerConfig`, and `
 | subjectAltNames              | no                                        | An array of fully qualified domain names using which a user can reach API server. These domains are added as Subject Alternative Names to the generated API server certificate. **NOTE**: These domains **will not** be automatically provisioned.                                                                                                                                                                         |
 | firstConsecutiveStaticIP     | only required when vnetSubnetId specified and when MasterProfile is not `VirtualMachineScaleSets`  | The IP address of the first master. IP Addresses will be assigned consecutively to additional master nodes. When MasterProfile is using `VirtualMachineScaleSets`, this value will be determined by an offset from the first IP in the `vnetCidr`. For example, if `vnetCidr` is `10.239.0.0/16`, then `firstConsecutiveStaticIP` will be `10.239.0.4`                                                                                                                                                                                                                                                                                                                 |
 | vmsize                       | yes                                       | Describes a valid [Azure VM Sizes](https://azure.microsoft.com/en-us/documentation/articles/virtual-machines-windows-sizes/). These are restricted to machines with at least 2 cores and 100GB of ephemeral disk space                                                                                                                                                                                                     |
+| storageProfile               | no                                                                   | Specifies the storage profile to use. Valid values are [ManagedDisks](../../examples/disks-managed) or [StorageAccount](../../examples/disks-storageaccount). Defaults to `ManagedDisks`                                                                                                                                                                                                                                                                                                                                               |
 | osDiskSizeGB                 | no                                        | Describes the OS Disk Size in GB                                                                                                                                                                                                                                                                                                                                                                                           |
 | vnetSubnetId                 | only required when using custom VNET                                        | Specifies the Id of an alternate VNET subnet. The subnet id must specify a valid VNET ID owned by the same subscription. ([bring your own VNET examples](../../examples/vnet)). When MasterProfile is set to `VirtualMachineScaleSets`, this value should be the subnetId of the master subnet. When MasterProfile is set to `AvailabilitySet`, this value should be the subnetId shared by both master and agent nodes.                                                                                                                                                                                                                                               |
 | extensions                   | no                                        | This is an array of extensions. This indicates that the extension be run on a single master. The name in the extensions array must exactly match the extension name in the extensionProfiles                                                                                                                                                                                                                               |
@@ -548,9 +550,9 @@ A cluster can have 0 to 12 agent pool profiles. Agent Pool Profiles are used for
 | availabilityProfile          | no                                                                   | Supported values are `VirtualMachineScaleSets` (default, except for Kubernetes clusters before version 1.10) and `AvailabilitySet`.                                                                                                                                                                                                                                                                                                                                                                                              |
 | count                        | yes                                                                  | Describes the node count                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | [availabilityZones](../../examples/kubernetes-zones/README.md)                    | no                                       | To protect your cluster from datacenter-level failures, you can enable the Availability Zones feature for your cluster by configuring `"availabilityZones"` for the master profile and all of the agentPool profiles in the cluster definition. Check out [Availability Zones README](../../examples/kubernetes-zones/README.md) for more details.                                                                                                                                                                                                                                                   |
-| singlePlacementGroup             | no                                                                   | Supported values are `true` (default) and `false`. Only applies to clusters with availabilityProfile `VirtualMachineScaleSets`. `true`: A VMSS with a single placement group and has a range of 0-100 VMs. `false`: A VMSS with multiple placement groups and has a range of 0-1,000 VMs. For more information, check out [virtual machine scale sets placement groups](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-placement-groups).                                                                                                                                                                                                                           |
-| scaleSetPriority             | no                                                                   | Supported values are `Regular` (default) and `Low`. Only applies to clusters with availabilityProfile `VirtualMachineScaleSets`. Enables the usage of [Low-priority VMs on Scale Sets](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-use-low-priority).                                                                                                                                                                                                                           |
-| scaleSetEvictionPolicy       | no                                                                   | Supported values are `Delete` (default) and `Deallocate`. Only applies to clusters with availabilityProfile of `VirtualMachineScaleSets` and scaleSetPriority of `Low`.                                                                                                                                                                                                                                                                                                                                                          |
+| singlePlacementGroup             | no                                                                   | Supported values are `true` (default) and `false`. A value of `true`: A VMSS with a single placement group and has a range of 0-100 VMs. A value of `false`: A VMSS with multiple placement groups and has a range of 0-1,000 VMs. For more information, check out [virtual machine scale sets placement groups](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-placement-groups). This configuration is only valid on an agent pool with an `"availabilityProfile"` value of `"VirtualMachineScaleSets"`                                                                                                                                                                                                                       |
+| scaleSetPriority             | no                                                                   | Supported values are `Regular` (default) and `Low`. This configuration is only valid on an agent pool with an `"availabilityProfile"` value of `"VirtualMachineScaleSets"`. Enables the usage of [Low-priority VMs on Scale Sets](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-use-low-priority).                                                                                                                                                                                                                           |
+| scaleSetEvictionPolicy       | no                                                                   | Supported values are `Delete` (default) and `Deallocate`. This configuration is only valid on an agent pool with an `"availabilityProfile"` value of `"VirtualMachineScaleSets"` and a `"scaleSetPriority"` value of `"Low"`.                                                                                                                                                                                                                                                                                                                                                          |
 | diskSizesGB                  | no                                                                   | Describes an array of up to 4 attached disk sizes. Valid disk size values are between 1 and 1024                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | dnsPrefix                    | Required if agents are to be exposed publically with a load balancer | The dns prefix that forms the FQDN to access the loadbalancer for this agent pool. This must be a unique name among all agent pools. Not supported for Kubernetes clusters                                                                                                                                                                                                                                                                                                                                                       |
 | name                         | yes                                                                  | This is the unique name for the agent pool profile. The resources of the agent pool profile are derived from this name                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -565,6 +567,7 @@ A cluster can have 0 to 12 agent pool profiles. Agent Pool Profiles are used for
 | distro                       | no                                                                   | Specifies the agent pool's Linux distribution. Currently supported values are: `ubuntu`, `aks`, `aks-docker-engine` and `coreos` (CoreOS support is currently experimental - [Example of CoreOS Master with CoreOS Agents](../../examples/coreos/kubernetes-coreos.json)). For Azure Public Cloud, defaults to `aks` if undefined, unless GPU nodes are present, in which case it will default to `aks-docker-engine`. For Sovereign Clouds, the default is `ubuntu`. `aks` is a custom image based on `ubuntu` that comes with pre-installed software necessary for Kubernetes deployments (Azure Public Cloud only for now). **NOTE**: GPU nodes are currently incompatible with the default Moby container runtime provided in the `aks` image. Clusters containing GPU nodes will be set to use the `aks-docker-engine` distro which is functionally equivalent to `aks` with the exception of the docker distribution (see [GPU support Walkthrough](gpu.md) for details). Currently supported OS and orchestrator configurations -- `ubuntu`: Kubernetes; `coreos`: Kubernetes. [Example of CoreOS Master with Windows and Linux (CoreOS and Ubuntu) Agents](../../examples/coreos/kubernetes-coreos-hybrid.json) |
 | acceleratedNetworkingEnabled | no                                                                   | Use [Azure Accelerated Networking](https://azure.microsoft.com/en-us/blog/maximize-your-vm-s-performance-with-accelerated-networking-now-generally-available-for-both-windows-and-linux/) feature for Linux agents (You must select a VM SKU that supports Accelerated Networking). Defaults to `true` if the VM SKU selected supports Accelerated Networking                                                                                                                                                                                                                                                      |
 | acceleratedNetworkingEnabledWindows | no                                                                   | Use [Azure Accelerated Networking](https://azure.microsoft.com/en-us/blog/maximize-your-vm-s-performance-with-accelerated-networking-now-generally-available-for-both-windows-and-linux/) feature for Windows agents (You must select a VM SKU that supports Accelerated Networking). Defaults to `false`                                                                                                                                                                                                                                                      |
+| vmssOverProvisioningEnabled | no                                                                   | Use [Overprovisioning](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-design-overview#overprovisioning) with VMSS. This configuration is only valid on an agent pool with an `"availabilityProfile"` value of `"VirtualMachineScaleSets"`. Defaults to `false`                                                                                                                                                                                                                                                      |
 
 ### linuxProfile
 
@@ -573,7 +576,7 @@ A cluster can have 0 to 12 agent pool profiles. Agent Pool Profiles are used for
 | Name                             | Required | Description                                                                                                                                                                      |
 | -------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | adminUsername                    | yes      | Describes the username to be used on all linux clusters                                                                                                                          |
-| ssh.publicKeys.keyData           | yes      | The public SSH key used for authenticating access to all Linux nodes in the cluster                                                                                              |
+| ssh.publicKeys[].keyData           | yes      | The public SSH key used for authenticating access to all Linux nodes in the cluster                                                                                              |
 | secrets                          | no       | Specifies an array of key vaults to pull secrets from and what secrets to pull from each                                                                                         |
 | customSearchDomain.name          | no       | describes the search domain to be used on all linux clusters                                                                                                                     |
 | customSearchDomain.realmUser     | no       | describes the realm user with permissions to update dns registries on Windows Server DNS                                                                                         |
@@ -581,6 +584,47 @@ A cluster can have 0 to 12 agent pool profiles. Agent Pool Profiles are used for
 | customNodesDNS.dnsServer         | no       | describes the IP address of the DNS Server                                                                                                                                       |
 
 Here are instructions for [generating a public/private key pair][ssh] for `ssh.publicKeys.keyData`.
+
+
+#### Notes on SSH public keys
+
+At least one SSH key is required, but multiple are supported when deploying Kubernetes.
+
+Here's a minimal example using just one key:
+
+```
+    "linuxProfile": {
+      "adminUsername": "azureuser",
+      "ssh": {
+        "publicKeys": [
+          {
+            "keyData": "ssh-rsa AAAA...w=="
+          }
+        ]
+      }
+    },
+```
+
+
+And an example using two keys.
+
+
+```json
+    "linuxProfile": {
+      "adminUsername": "azureuser",
+      "ssh": {
+        "publicKeys": [
+          {
+            "keyData": "ssh-rsa AAAA...w=="
+          },
+          {
+            "keyData": "ssh-rsa AAAA...w=="
+          }
+        ]
+      }
+    },
+```
+
 
 #### secrets
 
@@ -617,7 +661,8 @@ https://{keyvaultname}.vault.azure.net:443/secrets/{secretName}/{version}
 | windowsSku                       | no       | SKU usedto find Windows VM to deploy from marketplace. Default: `Datacenter-Core-1809-with-Containers-smalldisk` |
 | imageVersion                     | no       | Specific image version to deploy from marketplace.  Default: `latest` |
 | windowsImageSourceURL            | no       | Path to an existing Azure storage blob with a sysprepped VHD. This is used to test pre-release or customized VHD files that you have uploaded to Azure. If provided, the above 4 parameters are ignored. |
-| sshEnabled                       | no       | If set to `true`, OpenSSH will be installed on windows nodes to allow for ssh remoting. **Only for Windows version 1809 or 2019** |
+| sshEnabled                       | no       | If set to `true`, OpenSSH will be installed on windows nodes to allow for ssh remoting. **Only for Windows version 1809 or 2019** . The same SSH authorized public key(s) will be added from [linuxProfile.ssh.publicKeys](#linuxProfile) |
+
 
 #### Choosing a Windows version
 

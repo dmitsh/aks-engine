@@ -611,6 +611,7 @@ func convertWindowsProfileToVLabs(api *WindowsProfile, vlabsProfile *vlabs.Windo
 		vlabsProfile.Secrets = append(vlabsProfile.Secrets, *secret)
 	}
 	vlabsProfile.SSHEnabled = api.SSHEnabled
+	vlabsProfile.EnableAutomaticUpdates = api.EnableAutomaticUpdates
 }
 
 func convertOrchestratorProfileToV20160930(api *OrchestratorProfile, o *v20160930.OrchestratorProfile) {
@@ -706,9 +707,11 @@ func convertKubernetesConfigToVLabs(apiCfg *KubernetesConfig, vlabsCfg *vlabs.Ku
 	vlabsCfg.ServiceCidr = apiCfg.ServiceCIDR
 	vlabsCfg.NetworkPolicy = apiCfg.NetworkPolicy
 	vlabsCfg.NetworkPlugin = apiCfg.NetworkPlugin
+	vlabsCfg.ContainerRuntime = apiCfg.ContainerRuntime
 	vlabsCfg.MaxPods = apiCfg.MaxPods
 	vlabsCfg.DockerBridgeSubnet = apiCfg.DockerBridgeSubnet
 	vlabsCfg.MobyVersion = apiCfg.MobyVersion
+	vlabsCfg.ContainerdVersion = apiCfg.ContainerdVersion
 	vlabsCfg.CloudProviderBackoff = apiCfg.CloudProviderBackoff
 	vlabsCfg.CloudProviderBackoffDuration = apiCfg.CloudProviderBackoffDuration
 	vlabsCfg.CloudProviderBackoffExponent = apiCfg.CloudProviderBackoffExponent
@@ -745,6 +748,7 @@ func convertKubernetesConfigToVLabs(apiCfg *KubernetesConfig, vlabsCfg *vlabs.Ku
 	vlabsCfg.KeyVaultSku = apiCfg.KeyVaultSku
 	vlabsCfg.MaximumLoadBalancerRuleCount = apiCfg.MaximumLoadBalancerRuleCount
 	vlabsCfg.ProxyMode = vlabs.KubeProxyMode(apiCfg.ProxyMode)
+	vlabsCfg.PrivateAzureRegistryServer = apiCfg.PrivateAzureRegistryServer
 	convertAddonsToVlabs(apiCfg, vlabsCfg)
 	convertKubeletConfigToVlabs(apiCfg, vlabsCfg)
 	convertControllerManagerConfigToVlabs(apiCfg, vlabsCfg)
@@ -1009,6 +1013,7 @@ func convertAgentPoolProfileToVLabs(api *AgentPoolProfile, p *vlabs.AgentPoolPro
 	p.CustomNodeLabels = map[string]string{}
 	p.AcceleratedNetworkingEnabled = api.AcceleratedNetworkingEnabled
 	p.AcceleratedNetworkingEnabledWindows = api.AcceleratedNetworkingEnabledWindows
+	p.VMSSOverProvisioningEnabled = api.VMSSOverProvisioningEnabled
 	p.AvailabilityZones = api.AvailabilityZones
 	p.SinglePlacementGroup = api.SinglePlacementGroup
 
@@ -1201,6 +1206,8 @@ func convertCloudProfileToVLabs(api *CustomCloudProfile, vlabsccp *vlabs.CustomC
 		vlabsccp.AzureEnvironmentSpecConfig = &vlabs.AzureEnvironmentSpecConfig{}
 		convertAzureEnvironmentSpecConfigToVLabs(api.AzureEnvironmentSpecConfig, vlabsccp.AzureEnvironmentSpecConfig)
 	}
+	vlabsccp.IdentitySystem = api.IdentitySystem
+	vlabsccp.AuthenticationMethod = api.AuthenticationMethod
 
 }
 

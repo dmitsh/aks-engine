@@ -7,12 +7,14 @@
             "orchestratorRelease": "1.11",
             "kubernetesConfig": {
                 "kubernetesImageBase": "k8s.gcr.io/",
-                "customHyperkubeImage": "msazurestackqa/hyperkube-amd64/v1.11.6",
+                "customHyperkubeImage": "msazurestackqa/hyperkube-amd64:v1.11.6",
                 "useInstanceMetadata": false,
                 "networkPolicy": "none"
             }
         },
         "customCloudProfile": {
+            "identitySystem": "azure_ad",
+            "authenticationMethod": "client_secret",
             "environment":{
             "name": "AzureStackCloud",
             "managementPortalURL": "",
@@ -22,7 +24,7 @@
             "activeDirectoryEndpoint": "https://login.windows.net/",
             "galleryEndpoint": "https://portal.local.azurestack.external:30015/",
             "keyVaultEndpoint": "",
-            "graphEndpoint": "https=//graph.windows.net/",
+            "graphEndpoint": "https://graph.windows.net/",
             "storageEndpointSuffix": "local.azurestack.external",
             "sqlDatabaseDNSSuffix": "",
             "trafficManagerDNSSuffix": "",

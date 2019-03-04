@@ -1,7 +1,4 @@
 #!/bin/bash
-
-CONTAINERD_DOWNLOAD_URL_BASE="https://storage.googleapis.com/cri-containerd-release/"
-
 source /home/packer/provision_installs.sh
 source /home/packer/provision_source.sh
 
@@ -18,6 +15,7 @@ installDeps
 if [[ ${FEATURE_FLAGS} == *"docker-engine"* ]]; then
     DOCKER_ENGINE_REPO="https://apt.dockerproject.org/repo"
     installDockerEngine
+    overrideDockerEngineStorageDriver
     installGPUDrivers
 else
     MOBY_VERSION="3.0.4"
@@ -28,6 +26,7 @@ installClearContainersRuntime
 
 VNET_CNI_VERSIONS="1.0.16 1.0.17"
 CNI_PLUGIN_VERSIONS="0.7.1"
+CONTAINERD_VERSIONS="1.1.5 1.1.6 1.2.4"
 
 for VNET_CNI_VERSION in $VNET_CNI_VERSIONS; do
     VNET_CNI_PLUGINS_URL="https://acs-mirror.azureedge.net/cni/azure-vnet-cni-linux-amd64-v${VNET_CNI_VERSION}.tgz"
@@ -39,11 +38,14 @@ for CNI_PLUGIN_VERSION in $CNI_PLUGIN_VERSIONS; do
     downloadCNI
 done
 
-installContainerd
+CONTAINERD_DOWNLOAD_URL_BASE="https://storage.googleapis.com/cri-containerd-release/"
+for CONTAINERD_VERSION in ${CONTAINERD_VERSIONS}; do
+    downloadContainerd
+done
 
 installImg
 
-DASHBOARD_VERSIONS="1.10.1 1.6.3"
+DASHBOARD_VERSIONS="1.10.1"
 for DASHBOARD_VERSION in ${DASHBOARD_VERSIONS}; do
     pullContainerImage "docker" "k8s.gcr.io/kubernetes-dashboard-amd64:v${DASHBOARD_VERSION}"
 done
@@ -93,7 +95,7 @@ for TILLER_VERSION in ${TILLER_VERSIONS}; do
     pullContainerImage "docker" "gcr.io/kubernetes-helm/tiller:v${TILLER_VERSION}"
 done
 
-CLUSTER_AUTOSCALER_VERSIONS="1.13.1 1.12.2 1.3.4 1.3.3 1.2.2 1.1.2"
+CLUSTER_AUTOSCALER_VERSIONS="1.13.1 1.12.2 1.3.7 1.3.4 1.3.3 1.2.2 1.1.2"
 for CLUSTER_AUTOSCALER_VERSION in ${CLUSTER_AUTOSCALER_VERSIONS}; do
     pullContainerImage "docker" "k8s.gcr.io/cluster-autoscaler:v${CLUSTER_AUTOSCALER_VERSION}"
 done
@@ -171,7 +173,7 @@ done
 pullContainerImage "docker" "busybox"
 
 # TODO: fetch supported k8s versions from an aks-engine command instead of hardcoding them here
-K8S_VERSIONS="1.7.15 1.7.16 1.8.14 1.8.15 1.9.10 1.9.11 1.10.12 1.10.13 1.11.6 1.11.7 1.12.4 1.12.5 1.13.2 1.13.3"
+K8S_VERSIONS="1.9.10 1.9.11 1.10.12 1.10.13 1.11.7 1.11.8 1.12.5 1.12.6 1.13.3 1.13.4"
 
 for KUBERNETES_VERSION in ${K8S_VERSIONS}; do
     HYPERKUBE_URL="k8s.gcr.io/hyperkube-amd64:v${KUBERNETES_VERSION}"

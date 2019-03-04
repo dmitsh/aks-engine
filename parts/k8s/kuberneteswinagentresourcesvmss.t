@@ -55,7 +55,10 @@
     },
     "properties": {
       "singlePlacementGroup": {{UseSinglePlacementGroup .}},
-      "overprovision": false,
+      "overprovision": {{IsVMSSOverProvisioningEnabled}},
+      {{if IsVMSSOverProvisioningEnabled}}
+      "doNotRunExtensionsOnOverprovisionedVMs": true,
+      {{end}}
       "upgradePolicy": {
         "mode": "Manual"
       },
@@ -103,7 +106,10 @@
           "computerNamePrefix": "[variables('{{.Name}}VMNamePrefix')]",
           {{GetKubernetesWindowsAgentCustomData .}}
           "adminUsername": "[parameters('windowsAdminUsername')]",
-          "adminPassword": "[parameters('windowsAdminPassword')]"
+          "adminPassword": "[parameters('windowsAdminPassword')]",
+          "windowsConfiguration": {
+            "enableAutomaticUpdates": {{WindowsAutomaticUpdateEnabled}}
+          }
         },
         "storageProfile": {
           {{GetDataDisks .}}

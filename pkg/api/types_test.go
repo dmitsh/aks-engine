@@ -17,6 +17,7 @@ import (
 )
 
 const exampleCustomHyperkubeImage = `example.azurecr.io/example/hyperkube-amd64:custom`
+const examplePrivateAzureRegistryServer = `example.azurecr.io`
 
 const exampleAPIModel = `{
 		"apiVersion": "vlabs",
@@ -34,6 +35,26 @@ const exampleAPIModel = `{
 		},
 		"servicePrincipalProfile": { "clientId": "", "secret": "" }
 	}
+}
+`
+
+const exampleAPIModelWithPrivateAzureRegistry = `{
+	"apiVersion": "vlabs",
+"properties": {
+	"orchestratorProfile": {
+		"orchestratorType": "Kubernetes",
+		"kubernetesConfig": {
+			"customHyperkubeImage": "` + exampleCustomHyperkubeImage + `",
+			"privateAzureRegistryServer": "` + examplePrivateAzureRegistryServer + `"
+		}
+	},
+	"masterProfile": { "count": 1, "dnsPrefix": "", "vmSize": "Standard_D2_v2" },
+	"agentPoolProfiles": [ { "name": "linuxpool1", "count": 2, "vmSize": "Standard_D2_v2", "availabilityProfile": "AvailabilitySet" } ],
+	"windowsProfile": { "adminUsername": "azureuser", "adminPassword": "replacepassword1234$" },
+	"linuxProfile": { "adminUsername": "azureuser", "ssh": { "publicKeys": [ { "keyData": "" } ] }
+	},
+	"servicePrincipalProfile": { "clientId": "", "secret": "" }
+}
 }
 `
 
@@ -714,7 +735,7 @@ func TestRequireRouteTable(t *testing.T) {
 				OrchestratorProfile: &OrchestratorProfile{
 					OrchestratorType: Kubernetes,
 					KubernetesConfig: &KubernetesConfig{
-						NetworkPolicy: "cilium",
+						NetworkPolicy: NetworkPolicyCilium,
 					},
 				},
 			},
@@ -825,6 +846,11 @@ func TestWindowsProfile(t *testing.T) {
 	windowsSku := w.GetWindowsSku()
 	if windowsSku != KubernetesDefaultWindowsSku {
 		t.Fatalf("Expected GetWindowsSku() to equal default KubernetesDefaultWindowsSku, got %s", windowsSku)
+	}
+
+	update := w.GetEnableWindowsUpdate()
+	if !update {
+		t.Fatalf("Expected GetEnableWindowsUpdate() to equal default 'true', got %t", update)
 	}
 
 	w = WindowsProfile{
@@ -955,6 +981,22 @@ func TestCustomHyperkubeImageField(t *testing.T) {
 	actualCustomHyperkubeImage := apimodel.Properties.OrchestratorProfile.KubernetesConfig.CustomHyperkubeImage
 	if actualCustomHyperkubeImage != exampleCustomHyperkubeImage {
 		t.Fatalf("kubernetesConfig->customHyperkubeImage field value was unexpected: got(%s), expected(%s)", actualCustomHyperkubeImage, exampleCustomHyperkubeImage)
+	}
+}
+
+func TestPrivateAzureRegistryServerField(t *testing.T) {
+	log.Println(exampleAPIModelWithPrivateAzureRegistry)
+	apiloader := &Apiloader{
+		Translator: nil,
+	}
+	apimodel, _, err := apiloader.DeserializeContainerService([]byte(exampleAPIModelWithPrivateAzureRegistry), false, false, nil)
+	if err != nil {
+		t.Fatalf("unexpectedly error deserializing the example apimodel: %s", err)
+	}
+
+	actualPrivateAzureRegistryServer := apimodel.Properties.OrchestratorProfile.KubernetesConfig.PrivateAzureRegistryServer
+	if actualPrivateAzureRegistryServer != examplePrivateAzureRegistryServer {
+		t.Fatalf("kubernetesConfig->privateAzureRegistryServer field value was unexpected: got(%s), expected(%s)", actualPrivateAzureRegistryServer, examplePrivateAzureRegistryServer)
 	}
 }
 
@@ -2648,10 +2690,13 @@ func TestFormatAzureProdFQDN(t *testing.T) {
 }
 
 func TestFormatProdFQDNByLocation(t *testing.T) {
+	// Test locations for Azure
+	mockCSDefault := getMockBaseContainerService("1.11.6")
+	mockCSDefault.Location = "eastus"
 	dnsPrefix := "santest"
 	var actual []string
-	for _, location := range helpers.GetAzureLocations() {
-		actual = append(actual, FormatProdFQDNByLocation(dnsPrefix, location, ""))
+	for _, location := range mockCSDefault.GetLocations() {
+		actual = append(actual, FormatProdFQDNByLocation(dnsPrefix, location, mockCSDefault.Properties.GetCustomCloudName()))
 	}
 
 	expected := []string{
@@ -2706,6 +2751,22 @@ func TestFormatProdFQDNByLocation(t *testing.T) {
 
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("expected formatted fqdns %s, but got %s", expected, actual)
+	}
+
+	// Test location for Azure Stack Cloud
+	mockCSDefaultSpec := getMockBaseContainerService("1.11.6")
+	mockCSPDefaultSpec := getMockPropertiesWithCustomCloudProfile("azurestackcloud", true, true, false)
+	mockCSDefaultSpec.Properties.CustomCloudProfile = mockCSPDefaultSpec.CustomCloudProfile
+	mockCSDefaultSpec.Location = "randomlocation"
+	mockCSDefaultSpec.Properties.MasterProfile.DNSPrefix = "azurestackprefix"
+	mockCSDefaultSpec.SetPropertiesDefaults(false, false)
+	var actualResult []string
+	for _, location := range mockCSDefaultSpec.GetLocations() {
+		actualResult = append(actualResult, FormatProdFQDNByLocation("azurestackprefix", location, mockCSDefaultSpec.Properties.GetCustomCloudName()))
+	}
+	expectedResult := []string{"azurestackprefix.randomlocation.cloudapp.azurestack.external"}
+	if !reflect.DeepEqual(expectedResult, actualResult) {
+		t.Errorf("Test TestGetLocations() : expected to return %s, but got %s . ", expectedResult, actualResult)
 	}
 }
 
@@ -2765,7 +2826,7 @@ func TestKubernetesConfig_RequiresDocker(t *testing.T) {
 
 	// k8sConfig with empty runtime string
 	k = &KubernetesConfig{
-		ContainerRuntime: "docker",
+		ContainerRuntime: Docker,
 	}
 
 	if !k.RequiresDocker() {
@@ -3039,6 +3100,128 @@ func TestGetCustomEnvironmentJSON(t *testing.T) {
 	}
 }
 
+func TestGetLocations(t *testing.T) {
+
+	// Test location for Azure Stack Cloud
+	mockCSDefaultSpec := getMockBaseContainerService("1.11.6")
+	mockCSPDefaultSpec := getMockPropertiesWithCustomCloudProfile("azurestackcloud", true, true, false)
+	mockCSDefaultSpec.Properties.CustomCloudProfile = mockCSPDefaultSpec.CustomCloudProfile
+	mockCSDefaultSpec.Location = "randomlocation"
+
+	expectedResult := []string{"randomlocation"}
+	actualResult := mockCSDefaultSpec.GetLocations()
+	if !reflect.DeepEqual(expectedResult, actualResult) {
+		t.Errorf("Test TestGetLocations() : expected to return %s, but got %s . ", expectedResult, actualResult)
+	}
+
+	// Test locations for Azure
+	mockCSDefault := getMockBaseContainerService("1.11.6")
+	mockCSDefault.Location = "eastus"
+
+	expected := []string{"australiacentral",
+		"australiacentral2",
+		"australiaeast",
+		"australiasoutheast",
+		"brazilsouth",
+		"canadacentral",
+		"canadaeast",
+		"centralindia",
+		"centralus",
+		"centraluseuap",
+		"chinaeast",
+		"chinaeast2",
+		"chinanorth",
+		"chinanorth2",
+		"eastasia",
+		"eastus",
+		"eastus2",
+		"eastus2euap",
+		"francecentral",
+		"francesouth",
+		"japaneast",
+		"japanwest",
+		"koreacentral",
+		"koreasouth",
+		"northcentralus",
+		"northeurope",
+		"southcentralus",
+		"southeastasia",
+		"southindia",
+		"uksouth",
+		"ukwest",
+		"westcentralus",
+		"westeurope",
+		"westindia",
+		"westus",
+		"westus2",
+		"chinaeast",
+		"chinanorth",
+		"chinanorth2",
+		"chinaeast2",
+		"germanycentral",
+		"germanynortheast",
+		"usgovvirginia",
+		"usgoviowa",
+		"usgovarizona",
+		"usgovtexas",
+		"francecentral"}
+	actual := mockCSDefault.GetLocations()
+	if !reflect.DeepEqual(expected, actual) {
+		t.Errorf("Test TestGetLocations() : expected to return %s, but got %s . ", expected, actual)
+	}
+}
+
+func TestGetMasterFQDN(t *testing.T) {
+	tests := []struct {
+		name         string
+		properties   *Properties
+		expectedFQDN string
+	}{
+		{
+			name: "From Master Profile",
+			properties: &Properties{
+				MasterProfile: &MasterProfile{
+					DNSPrefix: "foo_master",
+					FQDN:      "FQDNFromMasterProfile",
+				},
+				AgentPoolProfiles: []*AgentPoolProfile{
+					{
+						Name: "foo_agent0",
+					},
+				},
+			},
+			expectedFQDN: "FQDNFromMasterProfile",
+		},
+		{
+			name: "From Hosted Master Profile",
+			properties: &Properties{
+				HostedMasterProfile: &HostedMasterProfile{
+					DNSPrefix: "foo_hosted_master",
+					FQDN:      "FQDNFromHostedMasterProfile",
+				},
+				AgentPoolProfiles: []*AgentPoolProfile{
+					{
+						Name: "foo_agent1",
+					},
+				},
+			},
+			expectedFQDN: "FQDNFromHostedMasterProfile",
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			actual := test.properties.GetMasterFQDN()
+
+			if actual != test.expectedFQDN {
+				t.Errorf("expected fqdn %s, but got %s", test.expectedFQDN, actual)
+			}
+		})
+	}
+}
+
 func getMockPropertiesWithCustomCloudProfile(name string, hasCustomCloudProfile, hasEnvironment, hasAzureEnvironmentSpecConfig bool) Properties {
 	var (
 		managementPortalURL          = "https://management.local.azurestack.external/"
@@ -3111,6 +3294,8 @@ func getMockPropertiesWithCustomCloudProfile(name string, hasCustomCloudProfile,
 			}
 			p.CustomCloudProfile.AzureEnvironmentSpecConfig = &azureStackCloudSpec
 		}
+		p.CustomCloudProfile.IdentitySystem = AzureADIdentitySystem
+		p.CustomCloudProfile.AuthenticationMethod = ClientSecretAuthMethod
 	}
 	return p
 }
