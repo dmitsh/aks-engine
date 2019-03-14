@@ -94,7 +94,7 @@ build-windows-k8s:
 	./scripts/build-windows-k8s.sh -v ${K8S_VERSION} -p ${PATCH_VERSION}
 
 .PHONY: dist
-dist: build-cross
+dist: build-cross compress-binaries
 	( \
 		cd _dist && \
 		$(DIST_DIRS) cp ../LICENSE {} \; && \
@@ -103,11 +103,23 @@ dist: build-cross
 		$(DIST_DIRS) zip -r {}.zip {} \; \
 	)
 
+.PHONY: compress-binaries
+compress-binaries:
+	@which upx || (echo "Please install the upx executable packer tool. See https://upx.github.io/" && exit 1)
+	find _dist -type f \( -name "aks-engine" -o -name "aks-engine.exe" \) -exec upx -9 {} +
+
 .PHONY: checksum
 checksum:
 	for f in _dist/*.{gz,zip} ; do \
 		shasum -a 256 "$${f}"  | awk '{print $$1}' > "$${f}.sha256" ; \
 	done
+
+.PHONY: build-container
+build-container:
+	docker build --no-cache --build-arg BUILD_DATE=`date -u +"%Y-%m-%dT%H:%M:%SZ"` \
+		--build-arg AKSENGINE_VERSION="$(VERSION)" -t microsoft/aks-engine:${VERSION} \
+		--file ./releases/Dockerfile.linux ./releases || \
+	echo 'This target works only for published releases. For example, "VERSION=0.32.0 make build-container".'
 
 .PHONY: clean
 clean:

@@ -187,10 +187,19 @@ func (sc *scaleCmd) load(cmd *cobra.Command) error {
 	}
 
 	templatePath := path.Join(sc.deploymentDirectory, "azuredeploy.json")
-	contents, _ := ioutil.ReadFile(templatePath)
+
+	var contents []byte
+	contents, err = ioutil.ReadFile(templatePath)
+	if err != nil {
+		return errors.Wrap(err, "error while trying to load the ARM template JSON file")
+	}
 
 	var template interface{}
-	json.Unmarshal(contents, &template)
+
+	err = json.Unmarshal(contents, &template)
+	if err != nil {
+		return errors.Wrap(err, "error while trying to unmarshal the ARM template")
+	}
 
 	templateMap := template.(map[string]interface{})
 	templateParameters := templateMap["parameters"].(map[string]interface{})
@@ -335,8 +344,7 @@ func (sc *scaleCmd) run(cmd *cobra.Command, args []string) error {
 
 	_, err = sc.containerService.SetPropertiesDefaults(false, true)
 	if err != nil {
-		log.Fatalf("error in SetPropertiesDefaults template %s: %s", sc.apiModelPath, err.Error())
-		os.Exit(1)
+		return errors.Wrapf(err, "error in SetPropertiesDefaults template %s", sc.apiModelPath)
 	}
 	template, parameters, err := templateGenerator.GenerateTemplate(sc.containerService, engine.DefaultGeneratorCode, BuildTag)
 	if err != nil {
@@ -357,7 +365,7 @@ func (sc *scaleCmd) run(cmd *cobra.Command, args []string) error {
 
 	err = json.Unmarshal([]byte(parameters), &parametersJSON)
 	if err != nil {
-		return errors.Wrap(err, "errror unmarshalling parameters")
+		return errors.Wrap(err, "error unmarshaling parameters")
 	}
 
 	transformer := transform.Transformer{Translator: translator.Translator}
@@ -376,7 +384,7 @@ func (sc *scaleCmd) run(cmd *cobra.Command, args []string) error {
 	case api.Kubernetes:
 		err = transformer.NormalizeForK8sVMASScalingUp(sc.logger, templateJSON)
 		if err != nil {
-			return errors.Wrapf(err, "error tranforming the template for scaling template %s", sc.apiModelPath)
+			return errors.Wrapf(err, "error transforming the template for scaling template %s", sc.apiModelPath)
 		}
 		if sc.agentPool.IsAvailabilitySets() {
 			addValue(parametersJSON, fmt.Sprintf("%sOffset", sc.agentPool.Name), highestUsedIndex+1)

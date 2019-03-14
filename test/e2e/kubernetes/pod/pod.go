@@ -26,6 +26,7 @@ import (
 const (
 	testDir        string = "testdirectory"
 	commandTimeout        = 1 * time.Minute
+	deleteTimeout         = 5 * time.Minute
 )
 
 // List is a container that holds all pods returned from doing a kubectl get pods
@@ -495,7 +496,11 @@ func WaitOnReady(podPrefix, namespace string, successesNeeded int, sleep, durati
 				for _, p := range pods {
 					e := p.Logs()
 					if e != nil {
-						log.Printf("Unable to print pod logs for pod %s", p.Metadata.Name)
+						log.Printf("Unable to print pod logs for pod %s: %s", p.Metadata.Name, e)
+					}
+					e = p.Describe()
+					if e != nil {
+						log.Printf("Unable to describe pod %s: %s", p.Metadata.Name, e)
 					}
 				}
 			}
@@ -574,7 +579,7 @@ func (p *Pod) Delete(retries int) error {
 	var kubectlError error
 	for i := 0; i < retries; i++ {
 		cmd := exec.Command("k", "delete", "po", "-n", p.Metadata.Namespace, p.Metadata.Name)
-		kubectlOutput, kubectlError = util.RunAndLogCommand(cmd, commandTimeout)
+		kubectlOutput, kubectlError = util.RunAndLogCommand(cmd, deleteTimeout)
 		if kubectlError != nil {
 			log.Printf("Error while trying to delete Pod %s in namespace %s:%s\n", p.Metadata.Namespace, p.Metadata.Name, string(kubectlOutput))
 			continue
@@ -792,6 +797,14 @@ func (p *Pod) Logs() error {
 	return nil
 }
 
+// Describe will describe a pod resource
+func (p *Pod) Describe() error {
+	cmd := exec.Command("k", "describe", "pod", p.Metadata.Name, "-n", p.Metadata.Namespace)
+	out, err := util.RunAndLogCommand(cmd, commandTimeout)
+	log.Printf("\n%s\n", string(out))
+	return err
+}
+
 // ValidateAzureFile will keep retrying the check if azure file is mounted in Pod
 func (p *Pod) ValidateAzureFile(mountPath string, sleep, duration time.Duration) (bool, error) {
 	readyCh := make(chan bool, 1)
@@ -806,7 +819,7 @@ func (p *Pod) ValidateAzureFile(mountPath string, sleep, duration time.Duration)
 			default:
 				out, err := p.Exec("--", "powershell", "mkdir", "-force", mountPath+"\\"+testDir)
 				if err == nil && strings.Contains(string(out), testDir) {
-					out, err := p.Exec("--", "powershell", "ls", mountPath)
+					out, err = p.Exec("--", "powershell", "ls", mountPath)
 					if err == nil && strings.Contains(string(out), testDir) {
 						readyCh <- true
 					} else {
@@ -843,9 +856,11 @@ func (p *Pod) ValidatePVC(mountPath string, sleep, duration time.Duration) (bool
 			case <-ctx.Done():
 				errCh <- errors.Errorf("Timeout exceeded (%s) while waiting for Pod (%s) to check azure disk mounted", duration.String(), p.Metadata.Name)
 			default:
-				out, err := p.Exec("--", "mkdir", mountPath+"/"+testDir)
+				var out []byte
+				var err error
+				out, err = p.Exec("--", "mkdir", mountPath+"/"+testDir)
 				if err == nil {
-					out, err := p.Exec("--", "ls", mountPath)
+					out, err = p.Exec("--", "ls", mountPath)
 					if err == nil && strings.Contains(string(out), testDir) {
 						readyCh <- true
 					} else {

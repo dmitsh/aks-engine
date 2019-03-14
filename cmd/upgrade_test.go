@@ -108,17 +108,22 @@ func TestUpgradeCommandShouldBeValidated(t *testing.T) {
 	}
 }
 
-func TestCreateUpgradeCommandSuccesfully(t *testing.T) {
+func TestCreateUpgradeCommand(t *testing.T) {
 	g := NewGomegaWithT(t)
-	output := newUpgradeCmd()
+	command := newUpgradeCmd()
 
-	g.Expect(output.Use).Should(Equal(upgradeName))
-	g.Expect(output.Short).Should(Equal(upgradeShortDescription))
-	g.Expect(output.Long).Should(Equal(upgradeLongDescription))
-	g.Expect(output.Flags().Lookup("location")).NotTo(BeNil())
-	g.Expect(output.Flags().Lookup("resource-group")).NotTo(BeNil())
-	g.Expect(output.Flags().Lookup("deployment-dir")).NotTo(BeNil())
-	g.Expect(output.Flags().Lookup("upgrade-version")).NotTo(BeNil())
+	g.Expect(command.Use).Should(Equal(upgradeName))
+	g.Expect(command.Short).Should(Equal(upgradeShortDescription))
+	g.Expect(command.Long).Should(Equal(upgradeLongDescription))
+	g.Expect(command.Flags().Lookup("location")).NotTo(BeNil())
+	g.Expect(command.Flags().Lookup("resource-group")).NotTo(BeNil())
+	g.Expect(command.Flags().Lookup("deployment-dir")).NotTo(BeNil())
+	g.Expect(command.Flags().Lookup("upgrade-version")).NotTo(BeNil())
+
+	command.SetArgs([]string{})
+	if err := command.Execute(); err == nil {
+		t.Fatalf("expected an error when calling upgrade with no arguments")
+	}
 }
 
 func TestUpgradeShouldFailForSameVersion(t *testing.T) {
@@ -140,7 +145,7 @@ func TestUpgradeShouldFailForSameVersion(t *testing.T) {
 	containerServiceMock := api.CreateMockContainerService("testcluster", "1.10.13", 3, 2, false)
 	containerServiceMock.Location = "centralus"
 	upgradeCmd.containerService = containerServiceMock
-	err := upgradeCmd.validateCurrentLocalState(fakeARMTemplateHandle)
+	err := upgradeCmd.initializeFromLocalState(fakeARMTemplateHandle)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("upgrading from Kubernetes version 1.10.13 to version 1.10.13 is not supported"))
 	resetValidVersions()
@@ -166,7 +171,7 @@ func TestUpgradeShouldFailForInvalidUpgradePath(t *testing.T) {
 	containerServiceMock := api.CreateMockContainerService("testcluster", "1.10.12", 3, 2, false)
 	containerServiceMock.Location = "centralus"
 	upgradeCmd.containerService = containerServiceMock
-	err := upgradeCmd.validateCurrentLocalState(fakeARMTemplateHandle)
+	err := upgradeCmd.initializeFromLocalState(fakeARMTemplateHandle)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("upgrading from Kubernetes version 1.10.12 to version 1.10.13 is not supported"))
 	resetValidVersions()
@@ -191,7 +196,7 @@ func TestUpgradeShouldSuceedForValidUpgradePath(t *testing.T) {
 	containerServiceMock := api.CreateMockContainerService("testcluster", "1.10.12", 3, 2, false)
 	containerServiceMock.Location = "centralus"
 	upgradeCmd.containerService = containerServiceMock
-	err := upgradeCmd.validateCurrentLocalState(fakeARMTemplateHandle)
+	err := upgradeCmd.initializeFromLocalState(fakeARMTemplateHandle)
 	g.Expect(err).NotTo(HaveOccurred())
 	resetValidVersions()
 }
@@ -212,7 +217,7 @@ func TestUpgradeFailWithPathWhenAzureDeployJsonIsInvalid(t *testing.T) {
 	containerServiceMock := api.CreateMockContainerService("testcluster", "1.13.2", 3, 2, false)
 	containerServiceMock.Location = "centralus"
 	upgradeCmd.containerService = containerServiceMock
-	err := upgradeCmd.validateCurrentLocalState(fakeARMTemplateHandle)
+	err := upgradeCmd.initializeFromLocalState(fakeARMTemplateHandle)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("_output/myspecialtestfolder/azuredeploy.json"))
 }
@@ -236,7 +241,34 @@ func TestUpgradeForceSameVersionShouldSucceed(t *testing.T) {
 	containerServiceMock.Location = "centralus"
 	upgradeCmd.containerService = containerServiceMock
 	upgradeCmd.force = true
-	err := upgradeCmd.validateCurrentLocalState(fakeARMTemplateHandle)
+	err := upgradeCmd.initializeFromLocalState(fakeARMTemplateHandle)
 	g.Expect(err).NotTo(HaveOccurred())
+	resetValidVersions()
+}
+
+func TestUpgradeForceDowngradeShouldSetVersionOnContainerService(t *testing.T) {
+	setupValidVersions(map[string]bool{
+		"1.10.12": true,
+		"1.10.13": true,
+	})
+	fakeARMTemplateHandle := strings.NewReader(`{"parameters" : { "nameSuffix" : {"defaultValue" : "test"}}}`)
+	g := NewGomegaWithT(t)
+	upgradeCmd := &upgradeCmd{
+		resourceGroupName:   "rg",
+		deploymentDirectory: "_output/test",
+		upgradeVersion:      "1.10.12",
+		location:            "centralus",
+		timeoutInMinutes:    60,
+
+		client: &armhelpers.MockAKSEngineClient{},
+	}
+
+	containerServiceMock := api.CreateMockContainerService("testcluster", "1.10.13", 3, 2, false)
+	containerServiceMock.Location = "centralus"
+	upgradeCmd.containerService = containerServiceMock
+	upgradeCmd.force = true
+	err := upgradeCmd.initializeFromLocalState(fakeARMTemplateHandle)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(upgradeCmd.containerService.Properties.OrchestratorProfile.OrchestratorVersion).To(Equal("1.10.12"))
 	resetValidVersions()
 }

@@ -94,8 +94,8 @@ func (ku *Upgrader) upgradeMasterNodes(ctx context.Context) error {
 	transformer := &transform.Transformer{
 		Translator: ku.Translator,
 	}
-	if err := transformer.NormalizeResourcesForK8sMasterUpgrade(ku.logger, templateMap, ku.DataModel.Properties.MasterProfile.IsManagedDisks(), nil); err != nil {
-		ku.logger.Errorf(err.Error())
+	if err = transformer.NormalizeResourcesForK8sMasterUpgrade(ku.logger, templateMap, ku.DataModel.Properties.MasterProfile.IsManagedDisks(), nil); err != nil {
+		ku.logger.Error(err.Error())
 		return err
 	}
 
@@ -140,22 +140,10 @@ func (ku *Upgrader) upgradeMasterNodes(ctx context.Context) error {
 		upgradedMastersIndex[masterIndex] = true
 	}
 
-	client, err := ku.getKubernetesClient()
-	if err != nil {
-		ku.logger.Errorf("Error getting Kubernetes client: %v", err)
-		return err
-	}
-
 	for _, vm := range *ku.ClusterTopology.MasterVMs {
 		ku.logger.Infof("Upgrading Master VM: %s", *vm.Name)
 
 		masterIndex, _ := utils.GetVMNameIndex(vm.StorageProfile.OsDisk.OsType, *vm.Name)
-
-		// Get the old master node's propertyies before it is deleted
-		oldNode, err := client.GetNode(*vm.Name)
-		if err != nil {
-			return err
-		}
 
 		err = upgradeMasterNode.DeleteNode(vm.Name, false)
 		if err != nil {
@@ -173,16 +161,6 @@ func (ku *Upgrader) upgradeMasterNodes(ctx context.Context) error {
 		if err != nil {
 			ku.logger.Infof("Error validating upgraded master VM: %s", *vm.Name)
 			return err
-		}
-
-		newNode, err := client.GetNode(*vm.Name)
-		if err != nil {
-			return err
-		}
-
-		err = ku.copyCustomNodeProperties(client, *vm.Name, oldNode, *vm.Name, newNode)
-		if err != nil {
-			ku.logger.Warningf("Failed to preserve custom annotations, labels, taints for master node %s: %v", *vm.Name, err)
 		}
 
 		upgradedMastersIndex[masterIndex] = true
@@ -246,7 +224,7 @@ func (ku *Upgrader) upgradeAgentPools(ctx context.Context) error {
 		if ku.DataModel.Properties.MasterProfile != nil {
 			isMasterManagedDisk = ku.DataModel.Properties.MasterProfile.IsManagedDisks()
 		}
-		if err := transformer.NormalizeResourcesForK8sAgentUpgrade(ku.logger, templateMap, isMasterManagedDisk, preservePools); err != nil {
+		if err = transformer.NormalizeResourcesForK8sAgentUpgrade(ku.logger, templateMap, isMasterManagedDisk, preservePools); err != nil {
 			ku.logger.Errorf(err.Error())
 			return ku.Translator.Errorf("Error generating upgrade template: %s", err.Error())
 		}
@@ -308,7 +286,7 @@ func (ku *Upgrader) upgradeAgentPools(ctx context.Context) error {
 
 			case "Failed":
 				ku.logger.Infof("Deleting agent VM %s in provisioning state %s", *vm.Name, vmProvisioningState)
-				err := upgradeAgentNode.DeleteNode(vm.Name, false)
+				err = upgradeAgentNode.DeleteNode(vm.Name, false)
 				if err != nil {
 					ku.logger.Errorf("Error deleting agent VM %s: %v", *vm.Name, err)
 					return err
@@ -347,7 +325,8 @@ func (ku *Upgrader) upgradeAgentPools(ctx context.Context) error {
 		for upgradedCount+toBeUpgradedCount < agentCount {
 			agentIndex := getAvailableIndex(agentVMs)
 
-			vmName, err := utils.GetK8sVMName(ku.DataModel.Properties, agentPoolProfile, agentIndex)
+			var vmName string
+			vmName, err = utils.GetK8sVMName(ku.DataModel.Properties, agentPoolProfile, agentIndex)
 			if err != nil {
 				ku.logger.Errorf("Error reconstructing agent VM name with index %d: %v", agentIndex, err)
 				return err
@@ -460,7 +439,7 @@ func (ku *Upgrader) upgradeAgentScaleSets(ctx context.Context) error {
 			Translator: ku.Translator,
 		}
 
-		if err := transformer.NormalizeForVMSSScaling(ku.logger, templateMap); err != nil {
+		if err = transformer.NormalizeForVMSSScaling(ku.logger, templateMap); err != nil {
 			ku.logger.Errorf("unable to update template, error: %v.", err)
 			return err
 		}
@@ -615,8 +594,17 @@ func (ku *Upgrader) generateUpgradeTemplate(upgradeContainerService *api.Contain
 
 	var template interface{}
 	var parameters interface{}
-	json.Unmarshal([]byte(templateJSON), &template)
-	json.Unmarshal([]byte(parametersJSON), &parameters)
+
+	err = json.Unmarshal([]byte(templateJSON), &template)
+	if err != nil {
+		return nil, nil, ku.Translator.Errorf("error while unmarshaling the ARM template JSON: %s", err.Error())
+	}
+
+	err = json.Unmarshal([]byte(parametersJSON), &parameters)
+	if err != nil {
+		return nil, nil, ku.Translator.Errorf("error while unmarshaling the ARM parameters JSON: %s", err.Error())
+	}
+
 	templateMap := template.(map[string]interface{})
 	parametersMap := parameters.(map[string]interface{})
 
@@ -631,7 +619,7 @@ func (ku *Upgrader) getLastVMNameInVMSS(ctx context.Context, resourceGroup strin
 		}
 
 		vms := vmScaleSetVMsPage.Values()
-		if vms != nil && len(vms) > 0 {
+		if len(vms) > 0 {
 			vm := vms[len(vms)-1]
 			lastVMName = *vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName
 		}
