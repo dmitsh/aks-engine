@@ -26,10 +26,12 @@ const (
 // the LinuxDistros supported by vlabs
 const (
 	Ubuntu          Distro = "ubuntu"
+	Ubuntu1804      Distro = "ubuntu-18.04"
 	RHEL            Distro = "rhel"
 	CoreOS          Distro = "coreos"
 	AKS             Distro = "aks"
-	AKSDockerEngine Distro = "aks-docker-engine"
+	AKSDockerEngine Distro = "aks-docker-engine" // deprecated docker-engine distro
+	AKS1804         Distro = "aks-18.04"
 	ACC1604         Distro = "acc-16.04"
 )
 
@@ -270,14 +272,14 @@ const (
 	// AzureCniPluginVerLinux specifies version of Azure CNI plugin, which has been mirrored from
 	// https://github.com/Azure/azure-container-networking/releases/download/${AZURE_PLUGIN_VER}/azure-vnet-cni-linux-amd64-${AZURE_PLUGIN_VER}.tgz
 	// to https://acs-mirror.azureedge.net/cni
-	AzureCniPluginVerLinux = "v1.0.17"
+	AzureCniPluginVerLinux = "v1.0.18"
 	// AzureCniPluginVerWindows specifies version of Azure CNI plugin, which has been mirrored from
 	// https://github.com/Azure/azure-container-networking/releases/download/${AZURE_PLUGIN_VER}/azure-vnet-cni-windows-amd64-${AZURE_PLUGIN_VER}.zip
 	// to https://acs-mirror.azureedge.net/cni
-	AzureCniPluginVerWindows = "v1.0.17"
+	AzureCniPluginVerWindows = "v1.0.18"
 	// CNIPluginVer specifies the version of CNI implementation
 	// https://github.com/containernetworking/plugins
-	CNIPluginVer = "v0.7.1"
+	CNIPluginVer = "v0.7.5"
 )
 
 const (
@@ -421,24 +423,37 @@ const (
 	// AzurePublicCloud is a const string reference identifier for public cloud
 	AzurePublicCloud = "AzurePublicCloud"
 	// AzureChinaCloud is a const string reference identifier for china cloud
-	AzureChinaCloud        = "AzureChinaCloud"
-	azureGermanCloud       = "AzureGermanCloud"
-	azureUSGovernmentCloud = "AzureUSGovernmentCloud"
+	AzureChinaCloud = "AzureChinaCloud"
+	// AzureGermanCloud is a const string reference identifier for german cloud
+	AzureGermanCloud = "AzureGermanCloud"
+	// AzureUSGovernmentCloud is a const string reference identifier for us government cloud
+	AzureUSGovernmentCloud = "AzureUSGovernmentCloud"
 	// AzureStackCloud is a const string reference identifier for Azure Stack cloud
 	AzureStackCloud = "AzureStackCloud"
 )
 
 const (
-	//AzureADIdentitySystem Identity System
+	// AzureADIdentitySystem is a const string reference identifier for Azure AD identity System
 	AzureADIdentitySystem = "azure_ad"
-	//ADFS Identity System
+	// ADFSIdentitySystem is a const string reference identifier for ADFS identity System
 	ADFSIdentitySystem = "adfs"
 )
 
 const (
-	//ClientSecretAuthMethod Authentication method
+	// AzureStackDependenciesLocationPublic indicates to get dependencies from in AzurePublic cloud
+	AzureStackDependenciesLocationPublic = "public"
+	// AzureStackDependenciesLocationChina indicates to get dependencies from AzureChina cloud
+	AzureStackDependenciesLocationChina = "china"
+	// AzureStackDependenciesLocationGerman indicates to get dependencies from AzureGerman cloud
+	AzureStackDependenciesLocationGerman = "german"
+	// AzureStackDependenciesLocationUSGovernment indicates to get dependencies from AzureUSGovernment cloud
+	AzureStackDependenciesLocationUSGovernment = "usgovernment"
+)
+
+const (
+	// ClientSecretAuthMethod indicates to use client seret for authentication
 	ClientSecretAuthMethod = "client_secret"
-	//ClientCertificateAuthMethod Authentication method
+	// ClientCertificateAuthMethod indicates to use client certificate for authentication
 	ClientCertificateAuthMethod = "client_certificate"
 )
 

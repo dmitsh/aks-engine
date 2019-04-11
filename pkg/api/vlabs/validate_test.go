@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/to"
 
 	"github.com/Azure/aks-engine/pkg/api/common"
@@ -597,6 +596,109 @@ func Test_Properties_ValidatePrivateAzureRegistryServer(t *testing.T) {
 	}
 }
 
+func Test_Properties_ValidateDistro(t *testing.T) {
+	p := &Properties{}
+	p.OrchestratorProfile = &OrchestratorProfile{}
+	p.OrchestratorProfile.OrchestratorType = Kubernetes
+	p.MasterProfile = &MasterProfile{
+		DNSPrefix: "foo",
+	}
+
+	// Should not error on valid distros in non-update scenarios
+	for _, distro := range DistroValues {
+		p.MasterProfile.Distro = distro
+		p.AgentPoolProfiles = []*AgentPoolProfile{
+			{
+				Name:   "pool1",
+				Distro: distro,
+			},
+		}
+		if err := p.validateMasterProfile(false); err != nil {
+			t.Errorf(
+				"should not error on distro=\"%s\"",
+				distro,
+			)
+		}
+		if err := p.validateAgentPoolProfiles(false); err != nil {
+			t.Errorf(
+				"should not error on distro=\"%s\"",
+				distro,
+			)
+		}
+	}
+
+	// Should not error on valid distros in update scenarios
+	for _, distro := range DistroValues {
+		p.MasterProfile.Distro = distro
+		p.AgentPoolProfiles = []*AgentPoolProfile{
+			{
+				Name:   "pool1",
+				Distro: distro,
+			},
+		}
+		if err := p.validateMasterProfile(true); err != nil {
+			t.Errorf(
+				"should not error on distro=\"%s\"",
+				distro,
+			)
+		}
+		if err := p.validateAgentPoolProfiles(true); err != nil {
+			t.Errorf(
+				"should not error on distro=\"%s\"",
+				distro,
+			)
+		}
+	}
+
+	// Should error for invalid distros on non-update scenarios
+	bogusDistroValues := []Distro{AKSDockerEngine, "bogon"}
+	for _, distro := range bogusDistroValues {
+		p.MasterProfile.Distro = distro
+		p.AgentPoolProfiles = []*AgentPoolProfile{
+			{
+				Name:   "pool1",
+				Distro: distro,
+			},
+		}
+		if err := p.validateMasterProfile(false); err == nil {
+			t.Errorf(
+				"should error on distro=\"%s\"",
+				distro,
+			)
+		}
+		if err := p.validateAgentPoolProfiles(false); err == nil {
+			t.Errorf(
+				"should error on distro=\"%s\"",
+				distro,
+			)
+		}
+	}
+
+	// Should not error for aks-docker-engine distro on update scenarios
+	oldDistros := []Distro{AKSDockerEngine}
+	for _, distro := range oldDistros {
+		p.MasterProfile.Distro = distro
+		p.AgentPoolProfiles = []*AgentPoolProfile{
+			{
+				Name:   "pool1",
+				Distro: distro,
+			},
+		}
+		if err := p.validateMasterProfile(true); err != nil {
+			t.Errorf(
+				"should error on distro=\"%s\"",
+				distro,
+			)
+		}
+		if err := p.validateAgentPoolProfiles(true); err != nil {
+			t.Errorf(
+				"should error on distro=\"%s\"",
+				distro,
+			)
+		}
+	}
+}
+
 func Test_Properties_ValidateNetworkPolicy(t *testing.T) {
 	p := &Properties{}
 	p.OrchestratorProfile = &OrchestratorProfile{}
@@ -1149,28 +1251,6 @@ func Test_Properties_ValidateContainerRuntime(t *testing.T) {
 	}
 }
 
-func TestAgentPoolProfileDistro(t *testing.T) {
-	p := &Properties{}
-	p.OrchestratorProfile = &OrchestratorProfile{}
-	p.OrchestratorProfile.OrchestratorType = Kubernetes
-	p.AgentPoolProfiles = []*AgentPoolProfile{
-		{
-			Distro: AKS,
-			VMSize: "Standard_NC6",
-		},
-		{
-			Distro: AKSDockerEngine,
-			VMSize: "Standard_NC6",
-		},
-	}
-	if err := p.AgentPoolProfiles[0].validateKubernetesDistro(); err == nil {
-		t.Errorf("should error on %s Distro with N Series VM SKU", AKS)
-	}
-	if err := p.AgentPoolProfiles[1].validateKubernetesDistro(); err != nil {
-		t.Errorf("should not error on %s Distro with N Series VM SKU", AKSDockerEngine)
-	}
-}
-
 func Test_Properties_ValidateAddons(t *testing.T) {
 	p := &Properties{}
 	p.OrchestratorProfile = &OrchestratorProfile{}
@@ -1648,7 +1728,7 @@ func TestMasterProfileValidate(t *testing.T) {
 				},
 			}
 			cs.Properties.AgentPoolProfiles = test.agentPoolProfiles
-			err := cs.Properties.validateMasterProfile()
+			err := cs.Properties.validateMasterProfile(false)
 			if test.expectedErr == "" && err != nil ||
 				test.expectedErr != "" && (err == nil || test.expectedErr != err.Error()) {
 				t.Errorf("test %s: unexpected error %q\n", test.name, err)
@@ -2372,7 +2452,7 @@ func TestAgentPoolProfile_ValidateVirtualMachineScaleSet(t *testing.T) {
 		cs.Properties.MasterProfile.VnetSubnetID = "vnet"
 		cs.Properties.MasterProfile.FirstConsecutiveStaticIP = "10.10.10.240"
 		expectedMsg := fmt.Sprintf("when masterProfile's availabilityProfile is VirtualMachineScaleSets and a vnetSubnetID is specified, the firstConsecutiveStaticIP should be empty and will be determined by an offset from the first IP in the vnetCidr")
-		if err := cs.Properties.validateMasterProfile(); err.Error() != expectedMsg {
+		if err := cs.Properties.validateMasterProfile(false); err.Error() != expectedMsg {
 			t.Errorf("expected error with message : %s, but got %s", expectedMsg, err.Error())
 		}
 	})
@@ -2384,7 +2464,7 @@ func TestAgentPoolProfile_ValidateVirtualMachineScaleSet(t *testing.T) {
 		agentPoolProfiles := cs.Properties.AgentPoolProfiles
 		agentPoolProfiles[0].AvailabilityProfile = AvailabilitySet
 		expectedMsg := fmt.Sprintf("VirtualMachineScaleSets for master profile must be used together with virtualMachineScaleSets for agent profiles. Set \"availabilityProfile\" to \"VirtualMachineScaleSets\" for agent profiles")
-		if err := cs.Properties.validateMasterProfile(); err.Error() != expectedMsg {
+		if err := cs.Properties.validateMasterProfile(false); err.Error() != expectedMsg {
 			t.Errorf("expected error with message : %s, but got %s", expectedMsg, err.Error())
 		}
 	})
@@ -2434,357 +2514,175 @@ func TestAgentPoolProfile_ValidateVirtualMachineScaleSet(t *testing.T) {
 }
 
 func TestValidateCustomCloudProfile(t *testing.T) {
-
-	const (
-		name                         = "AzureStackCloud"
-		managementPortalURL          = "https://management.local.azurestack.external/"
-		publishSettingsURL           = "https://management.local.azurestack.external/publishsettings/index"
-		serviceManagementEndpoint    = "https://management.azurestackci15.onmicrosoft.com/36f71706-54df-4305-9847-5b038a4cf189"
-		resourceManagerEndpoint      = "https://management.local.azurestack.external/"
-		activeDirectoryEndpoint      = "https://login.windows.net/"
-		galleryEndpoint              = "https://portal.local.azurestack.external=30015/"
-		keyVaultEndpoint             = "https://vault.azurestack.external/"
-		graphEndpoint                = "https://graph.windows.net/"
-		serviceBusEndpoint           = "https://servicebus.azurestack.external/"
-		batchManagementEndpoint      = "https://batch.azurestack.external/"
-		storageEndpointSuffix        = "core.azurestack.external"
-		sqlDatabaseDNSSuffix         = "database.azurestack.external"
-		trafficManagerDNSSuffix      = "trafficmanager.cn"
-		keyVaultDNSSuffix            = "vault.azurestack.external"
-		serviceBusEndpointSuffix     = "servicebus.azurestack.external"
-		serviceManagementVMDNSSuffix = "chinacloudapp.cn"
-		resourceManagerVMDNSSuffix   = "cloudapp.azurestack.external"
-		containerRegistryDNSSuffix   = "azurecr.io"
-		tokenAudience                = "https://management.azurestack.external/"
-	)
-
 	tests := []struct {
-		name          string
-		customProfile *CustomCloudProfile
-		expectedErr   error
+		name        string
+		cs          *ContainerService
+		expectedErr error
 	}{
 		{
 			name: "valid run",
-			customProfile: &CustomCloudProfile{
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						PortalURL: "https://portal.testlocation.cotoso.com",
+					},
 				},
 			},
 			expectedErr: nil,
 		},
 		{
-			name:          "custom profile is nil",
-			customProfile: nil,
-			expectedErr:   nil,
-		},
-		{
-			name: "environment is nil",
-			customProfile: &CustomCloudProfile{
-				Environment: nil,
-			},
-			expectedErr: errors.New("environment needs to be specified when CustomCloudProfile is provided"),
-		},
-		{
-			name: "name is empty",
-			customProfile: &CustomCloudProfile{
-				Environment: &azure.Environment{
-					Name:                         "",
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
+			name: "custom profile is nil",
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					LinuxProfile: &LinuxProfile{
+						AdminUsername: "abc",
+					},
 				},
 			},
-			expectedErr: errors.New("name needs to be specified when Environment is provided"),
+			expectedErr: nil,
 		},
 		{
-			name: "ServiceManagementEndpoint is empty",
-			customProfile: &CustomCloudProfile{
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    "",
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
+			name: "PortalURL is empty",
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						AuthenticationMethod: "azure_ad",
+					},
 				},
 			},
-			expectedErr: errors.New("serviceManagementEndpoint needs to be specified when Environment is provided"),
+			expectedErr: errors.New("portalURL needs to be specified when CustomCloudProfile is provided"),
 		},
 		{
-			name: "ResourceManagerEndpoint is empty",
-			customProfile: &CustomCloudProfile{
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      "",
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
+			name: "PortalURL is invalid",
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						PortalURL: "https://portal.testlocationinvalid.cotoso.com",
+					},
 				},
 			},
-			expectedErr: errors.New("resourceManagerEndpoint needs to be specified when Environment is provided"),
+			expectedErr: fmt.Errorf("portalURL needs to start with https://portal.%s. ", "testlocation"),
 		},
-		{
-			name: "activeDirectoryEndpoint is empty",
-			customProfile: &CustomCloudProfile{
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      "",
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
-				},
-			},
-			expectedErr: errors.New("activeDirectoryEndpoint needs to be specified when Environment is provided"),
-		},
-		{
-			name: "graphEndpoint is empty",
-			customProfile: &CustomCloudProfile{
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                "",
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
-				},
-			},
-			expectedErr: errors.New("graphEndpoint needs to be specified when Environment is provided"),
-		},
-		{
-			name: "resourceManagerVMDNSSuffix is empty",
-			customProfile: &CustomCloudProfile{
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   "",
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
-				},
-			},
-			expectedErr: errors.New("resourceManagerVMDNSSuffix needs to be specified when Environment is provided"),
-		},
+
 		{
 			name: "authenticationMethod has invalid value",
-			customProfile: &CustomCloudProfile{
-				AuthenticationMethod: "NonValidAuthenticationMethod",
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						AuthenticationMethod: "invalidAuthMethod",
+						PortalURL:            "https://portal.testlocation.cotoso.com",
+					},
 				},
 			},
-			expectedErr: errors.New(fmt.Sprintf("authenticationMethod allowed values are '%s' and '%s'", ClientCertificateAuthMethod, ClientSecretAuthMethod)),
+			expectedErr: errors.Errorf("authenticationMethod allowed values are '%s' and '%s'", ClientCertificateAuthMethod, ClientSecretAuthMethod),
 		},
 		{
 			name: "identitySystem has invalid value",
-			customProfile: &CustomCloudProfile{
-				IdentitySystem: "NonValidIdentitySystem",
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						IdentitySystem: "invalidIdentySytem",
+						PortalURL:      "https://portal.testlocation.cotoso.com",
+					},
 				},
 			},
-			expectedErr: errors.New(fmt.Sprintf("identitySystem allowed values are '%s' and '%s'", AzureADIdentitySystem, ADFSIdentitySystem)),
+			expectedErr: errors.Errorf("identitySystem allowed values are '%s' and '%s'", AzureADIdentitySystem, ADFSIdentitySystem),
+		},
+		{
+			name: "Dependencies location: china",
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						DependenciesLocation: DependenciesLocation("china"),
+						PortalURL:            "https://portal.testlocation.cotoso.com",
+					},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Dependencies location: public",
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						DependenciesLocation: DependenciesLocation("public"),
+						PortalURL:            "https://portal.testlocation.cotoso.com",
+					},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Dependencies location: german",
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						DependenciesLocation: DependenciesLocation("german"),
+						PortalURL:            "https://portal.testlocation.cotoso.com",
+					},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Dependencies location: usgovernment",
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						DependenciesLocation: DependenciesLocation("usgovernment"),
+						PortalURL:            "https://portal.testlocation.cotoso.com",
+					},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Dependencies location: invalid",
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						DependenciesLocation: DependenciesLocation("invalidDependenciesLocation"),
+						PortalURL:            "https://portal.testlocation.cotoso.com",
+					},
+				},
+			},
+			expectedErr: errors.New("The invalidDependenciesLocation dependenciesLocation is not supported. The supported vaules are [ public china german usgovernment]"),
 		},
 		{
 			name: " valid AzureAD and ClientSecret",
-			customProfile: &CustomCloudProfile{
-				IdentitySystem:       AzureADIdentitySystem,
-				AuthenticationMethod: ClientSecretAuthMethod,
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						IdentitySystem:       "azure_ad",
+						AuthenticationMethod: "client_secret",
+						PortalURL:            "https://portal.testlocation.cotoso.com",
+					},
 				},
 			},
 			expectedErr: nil,
 		},
 		{
 			name: " valid ADFS and ClientCertificate",
-			customProfile: &CustomCloudProfile{
-				IdentitySystem:       ADFSIdentitySystem,
-				AuthenticationMethod: ClientCertificateAuthMethod,
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
+			cs: &ContainerService{
+				Location: "testlocation",
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						IdentitySystem:       "adfs",
+						AuthenticationMethod: "client_certificate",
+						PortalURL:            "https://portal.testlocation.cotoso.com",
+					},
 				},
 			},
 			expectedErr: nil,
@@ -2795,9 +2693,7 @@ func TestValidateCustomCloudProfile(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			cs := getK8sDefaultContainerService(true)
-			cs.Properties.CustomCloudProfile = test.customProfile
-			gotErr := cs.Properties.validateCustomCloudProfile()
+			gotErr := test.cs.validateCustomCloudProfile()
 			if !helpers.EqualError(gotErr, test.expectedErr) {
 				t.Logf("scenario %q", test.name)
 				t.Errorf("expected error: %v, got: %v", test.expectedErr, gotErr)
@@ -2808,143 +2704,23 @@ func TestValidateCustomCloudProfile(t *testing.T) {
 
 func TestValidateLocation(t *testing.T) {
 
-	const (
-		name                         = "AzureStackCloud"
-		managementPortalURL          = "https://management.local.azurestack.external/"
-		publishSettingsURL           = "https://management.local.azurestack.external/publishsettings/index"
-		serviceManagementEndpoint    = "https://management.azurestackci15.onmicrosoft.com/36f71706-54df-4305-9847-5b038a4cf189"
-		resourceManagerEndpoint      = "https://management.local.azurestack.external/"
-		activeDirectoryEndpoint      = "https://login.windows.net/"
-		galleryEndpoint              = "https://portal.local.azurestack.external=30015/"
-		keyVaultEndpoint             = "https://vault.azurestack.external/"
-		graphEndpoint                = "https://graph.windows.net/"
-		serviceBusEndpoint           = "https://servicebus.azurestack.external/"
-		batchManagementEndpoint      = "https://batch.azurestack.external/"
-		storageEndpointSuffix        = "core.azurestack.external"
-		sqlDatabaseDNSSuffix         = "database.azurestack.external"
-		trafficManagerDNSSuffix      = "trafficmanager.cn"
-		keyVaultDNSSuffix            = "vault.azurestack.external"
-		serviceBusEndpointSuffix     = "servicebus.azurestack.external"
-		serviceManagementVMDNSSuffix = "chinacloudapp.cn"
-		resourceManagerVMDNSSuffix   = "cloudapp.azurestack.external"
-		containerRegistryDNSSuffix   = "azurecr.io"
-		tokenAudience                = "https://management.azurestack.external/"
-	)
-
 	tests := []struct {
 		name          string
 		location      string
 		propertiesnil bool
-		customProfile *CustomCloudProfile
+		cs            *ContainerService
 		expectedErr   error
 	}{
-		{
-			name:          "AzureStack location is customlocation",
-			location:      "customlocation",
-			propertiesnil: false,
-			customProfile: &CustomCloudProfile{
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
-				},
-			},
-			expectedErr: nil,
-		},
-		{
-			name:          "AzureStack properties is nil",
-			location:      "customlocation",
-			propertiesnil: true,
-			customProfile: &CustomCloudProfile{
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
-				},
-			},
-			expectedErr: errors.New("missing ContainerService Properties"),
-		},
-		{
-			name:          "Azure location is westus",
-			location:      "westus",
-			propertiesnil: false,
-			customProfile: nil,
-			expectedErr:   nil,
-		},
-		{
-			name:          "Azure location is empty",
-			location:      "",
-			propertiesnil: false,
-			customProfile: nil,
-			expectedErr:   nil,
-		},
-		{
-			name:          "Azure properties is nil",
-			location:      "westus",
-			propertiesnil: true,
-			customProfile: nil,
-			expectedErr:   errors.New("missing ContainerService Properties"),
-		},
+
 		{
 			name:          "AzureStack location is empty",
 			location:      "",
 			propertiesnil: false,
-			customProfile: &CustomCloudProfile{
-				Environment: &azure.Environment{
-					Name:                         name,
-					ManagementPortalURL:          managementPortalURL,
-					PublishSettingsURL:           publishSettingsURL,
-					ServiceManagementEndpoint:    serviceManagementEndpoint,
-					ResourceManagerEndpoint:      resourceManagerEndpoint,
-					ActiveDirectoryEndpoint:      activeDirectoryEndpoint,
-					GalleryEndpoint:              galleryEndpoint,
-					KeyVaultEndpoint:             keyVaultEndpoint,
-					GraphEndpoint:                graphEndpoint,
-					ServiceBusEndpoint:           serviceBusEndpoint,
-					BatchManagementEndpoint:      batchManagementEndpoint,
-					StorageEndpointSuffix:        storageEndpointSuffix,
-					SQLDatabaseDNSSuffix:         sqlDatabaseDNSSuffix,
-					TrafficManagerDNSSuffix:      trafficManagerDNSSuffix,
-					KeyVaultDNSSuffix:            keyVaultDNSSuffix,
-					ServiceBusEndpointSuffix:     serviceBusEndpointSuffix,
-					ServiceManagementVMDNSSuffix: serviceManagementVMDNSSuffix,
-					ResourceManagerVMDNSSuffix:   resourceManagerVMDNSSuffix,
-					ContainerRegistryDNSSuffix:   containerRegistryDNSSuffix,
-					TokenAudience:                tokenAudience,
+			cs: &ContainerService{
+				Properties: &Properties{
+					CustomCloudProfile: &CustomCloudProfile{
+						PortalURL: "https://portal.testlocation.cotoso.com",
+					},
 				},
 			},
 			expectedErr: errors.New("missing ContainerService Location"),
@@ -2956,8 +2732,11 @@ func TestValidateLocation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			cs := getK8sDefaultContainerService(true)
-			cs.Location = test.location
-			cs.Properties.CustomCloudProfile = test.customProfile
+			cs.Location = test.cs.Location
+			if test.cs.Properties != nil {
+				cs.Properties.CustomCloudProfile = test.cs.Properties.CustomCloudProfile
+			}
+
 			if test.propertiesnil {
 				cs.Properties = nil
 			}

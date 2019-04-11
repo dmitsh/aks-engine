@@ -14,8 +14,13 @@ import (
 func GenerateARMResources(cs *api.ContainerService) []interface{} {
 	var armResources []interface{}
 
-	useManagedIdentity := cs.Properties.OrchestratorProfile.KubernetesConfig.UseManagedIdentity
-	userAssignedIDEnabled := useManagedIdentity && cs.Properties.OrchestratorProfile.KubernetesConfig.UserAssignedID != ""
+	var useManagedIdentity, userAssignedIDEnabled bool
+	kubernetesConfig := cs.Properties.OrchestratorProfile.KubernetesConfig
+
+	if kubernetesConfig != nil {
+		useManagedIdentity = kubernetesConfig.UseManagedIdentity
+		userAssignedIDEnabled = useManagedIdentity && kubernetesConfig.UserAssignedID != ""
+	}
 
 	if userAssignedIDEnabled {
 		userAssignedID := createUserAssignedIdentities()
@@ -32,8 +37,8 @@ func GenerateARMResources(cs *api.ContainerService) []interface{} {
 			}
 			armResources = append(armResources, CreateAgentVMSS(cs, profile))
 		} else {
-			agentVmasResources := createKubernetesAgentVMASResources(cs, profile)
-			armResources = append(armResources, agentVmasResources...)
+			agentVMASResources := createKubernetesAgentVMASResources(cs, profile)
+			armResources = append(armResources, agentVMASResources...)
 		}
 	}
 
@@ -78,8 +83,8 @@ func createKubernetesAgentVMASResources(cs *api.ContainerService, profile *api.A
 		}
 	}
 
-	agentVmasNic := createAgentVMASNetworkInterface(cs, profile)
-	agentVMASResources = append(agentVMASResources, agentVmasNic)
+	agentVMASNIC := createAgentVMASNetworkInterface(cs, profile)
+	agentVMASResources = append(agentVMASResources, agentVMASNIC)
 
 	if profile.IsManagedDisks() {
 		agentAvSet := createAgentAvailabilitySets(profile)

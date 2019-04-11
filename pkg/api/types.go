@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"log"
 	"math/rand"
 	"net"
 	neturl "net/url"
@@ -708,12 +707,31 @@ type V20180331ARMManagedContainerService struct {
 	*v20180331.ManagedCluster
 }
 
+// AzureStackMetadataEndpoints is the type for Azure Stack metadata endpoints
+type AzureStackMetadataEndpoints struct {
+	GalleryEndpoint string                            `json:"galleryEndpoint,omitempty"`
+	GraphEndpoint   string                            `json:"graphEndpoint,omitempty"`
+	PortalEndpoint  string                            `json:"portalEndpoint,omitempty"`
+	Authentication  *AzureStackMetadataAuthentication `json:"authentication,omitempty"`
+}
+
+// AzureStackMetadataAuthentication is the type for Azure Stack metadata authentication endpoints
+type AzureStackMetadataAuthentication struct {
+	LoginEndpoint string   `json:"loginEndpoint,omitempty"`
+	Audiences     []string `json:"audiences,omitempty"`
+}
+
+// DependenciesLocation represents location to retrieve the dependencies.
+type DependenciesLocation string
+
 // CustomCloudProfile represents the custom cloud profile
 type CustomCloudProfile struct {
 	Environment                *azure.Environment          `json:"environment,omitempty"`
 	AzureEnvironmentSpecConfig *AzureEnvironmentSpecConfig `json:"azureEnvironmentSpecConfig,omitempty"`
 	IdentitySystem             string                      `json:"identitySystem,omitempty"`
 	AuthenticationMethod       string                      `json:"authenticationMethod,omitempty"`
+	DependenciesLocation       DependenciesLocation        `json:"dependenciesLocation,omitempty"`
+	PortalURL                  string                      `json:"portalURL,omitempty"`
 }
 
 // HasWindows returns true if the cluster contains windows
@@ -765,7 +783,7 @@ func (p *Properties) TotalNodes() int {
 		totalNodes = p.MasterProfile.Count
 	}
 	for _, pool := range p.AgentPoolProfiles {
-		totalNodes = totalNodes + pool.Count
+		totalNodes += pool.Count
 	}
 	return totalNodes
 }
@@ -1110,6 +1128,26 @@ func (m *MasterProfile) HasAvailabilityZones() bool {
 	return m.AvailabilityZones != nil && len(m.AvailabilityZones) > 0
 }
 
+// IsUbuntu1604 returns true if the master profile distro is based on Ubuntu 16.04
+func (m *MasterProfile) IsUbuntu1604() bool {
+	switch m.Distro {
+	case AKS, Ubuntu, ACC1604:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsUbuntu1804 returns true if the master profile distro is based on Ubuntu 18.04
+func (m *MasterProfile) IsUbuntu1804() bool {
+	switch m.Distro {
+	case AKS1804, Ubuntu1804:
+		return true
+	default:
+		return false
+	}
+}
+
 // IsCustomVNET returns true if the customer brought their own VNET
 func (a *AgentPoolProfile) IsCustomVNET() bool {
 	return len(a.VnetSubnetID) > 0
@@ -1168,6 +1206,32 @@ func (a *AgentPoolProfile) HasDisks() bool {
 // HasAvailabilityZones returns true if the agent pool has availability zones
 func (a *AgentPoolProfile) HasAvailabilityZones() bool {
 	return a.AvailabilityZones != nil && len(a.AvailabilityZones) > 0
+}
+
+// IsUbuntu1604 returns true if the agent pool profile distro is based on Ubuntu 16.04
+func (a *AgentPoolProfile) IsUbuntu1604() bool {
+	if a.OSType != Windows {
+		switch a.Distro {
+		case AKS, Ubuntu, ACC1604:
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+// IsUbuntu1804 returns true if the agent pool profile distro is based on Ubuntu 16.04
+func (a *AgentPoolProfile) IsUbuntu1804() bool {
+	if a.OSType != Windows {
+		switch a.Distro {
+		case AKS1804, Ubuntu1804:
+			return true
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // HasSecrets returns true if the customer specified secrets to install
@@ -1247,7 +1311,7 @@ func (o *OrchestratorProfile) IsDCOS() bool {
 // IsAzureCNI returns true if Azure CNI network plugin is enabled
 func (o *OrchestratorProfile) IsAzureCNI() bool {
 	if o.KubernetesConfig != nil {
-		return o.KubernetesConfig.NetworkPlugin == "azure"
+		return o.KubernetesConfig.NetworkPlugin == NetworkPluginAzure
 	}
 	return false
 }
@@ -1263,6 +1327,14 @@ func (o *OrchestratorProfile) RequireRouteTable() bool {
 	default:
 		return false
 	}
+}
+
+// IsPrivateCluster returns true if this deployment is a private cluster
+func (o *OrchestratorProfile) IsPrivateCluster() bool {
+	if !o.IsKubernetes() {
+		return false
+	}
+	return o.KubernetesConfig != nil && o.KubernetesConfig.PrivateCluster != nil && to.Bool(o.KubernetesConfig.PrivateCluster.Enabled)
 }
 
 // NeedsExecHealthz returns whether or not we have a configuration that requires exechealthz pod anywhere
@@ -1431,29 +1503,23 @@ func (p *Properties) IsNVIDIADevicePluginEnabled() bool {
 
 // IsAzureStackCloud return true if the cloud is AzureStack
 func (p *Properties) IsAzureStackCloud() bool {
-	var cloudProfileName string
-	if p.CustomCloudProfile != nil {
-		if p.CustomCloudProfile.Environment != nil {
-			cloudProfileName = p.CustomCloudProfile.Environment.Name
-		}
-	}
-	return strings.EqualFold(cloudProfileName, AzureStackCloud)
+	return p.CustomCloudProfile != nil
 }
 
 // GetCustomEnvironmentJSON return the JSON format string for custom environment
-func (p *Properties) GetCustomEnvironmentJSON(escape bool) string {
+func (p *Properties) GetCustomEnvironmentJSON(escape bool) (string, error) {
 	var environmentJSON string
 	if p.IsAzureStackCloud() {
 		bytes, err := json.Marshal(p.CustomCloudProfile.Environment)
 		if err != nil {
-			log.Fatalf("Could not serialize Environment object - %s", err.Error())
+			return "", fmt.Errorf("Could not serialize Environment object - %s", err.Error())
 		}
 		environmentJSON = string(bytes)
 		if escape {
 			environmentJSON = strings.Replace(environmentJSON, "\"", "\\\"", -1)
 		}
 	}
-	return environmentJSON
+	return environmentJSON, nil
 }
 
 // GetCustomCloudName returns name of environment if customCloudProfile is provided, returns empty string if customCloudProfile is empty.
@@ -1481,8 +1547,8 @@ func (cs *ContainerService) GetLocations() []string {
 }
 
 // GetCustomCloudAuthenticationMethod returns authentication method which k8s azure cloud provider will use
-// For AzurePublicCloud,AzureChinaCloud,azureGermanCloud,azureUSGovernmentCloud, it will be always be client_secret
-// For AzureStackCloud, if it is specifiled in configuration, the value will be used, if not ,the default value is client_secret.
+// For AzurePublicCloud,AzureChinaCloud,azureGermanCloud,AzureUSGovernmentCloud, it will be always be client_secret
+// For AzureStackCloud, if it is specified in configuration, the value will be used, if not ,the default value is client_secret.
 func (p *Properties) GetCustomCloudAuthenticationMethod() string {
 	if p.IsAzureStackCloud() {
 		return p.CustomCloudProfile.AuthenticationMethod
@@ -1491,8 +1557,8 @@ func (p *Properties) GetCustomCloudAuthenticationMethod() string {
 }
 
 // GetCustomCloudIdentitySystem returns identity system method for azure stack.
-// For AzurePublicCloud,AzureChinaCloud,azureGermanCloud,azureUSGovernmentCloud, it will be always be AzureAD
-// For AzureStackCloud, if it is specifiled in configuration, the value will be used, if not ,the default value is AzureAD.
+// For AzurePublicCloud,AzureChinaCloud,azureGermanCloud,AzureUSGovernmentCloud, it will be always be AzureAD
+// For AzureStackCloud, if it is specified in configuration, the value will be used, if not ,the default value is AzureAD.
 func (p *Properties) GetCustomCloudIdentitySystem() string {
 	if p.IsAzureStackCloud() {
 		return p.CustomCloudProfile.IdentitySystem
@@ -1598,7 +1664,7 @@ func (cs *ContainerService) GetCloudSpecConfig() AzureEnvironmentSpecConfig {
 // IsAKSBillingEnabled checks if the AKS Billing Extension should be enabled for a cloud environment.
 func (cs *ContainerService) IsAKSBillingEnabled() bool {
 	cloudSpecConfig := cs.GetCloudSpecConfig()
-	return cloudSpecConfig.CloudName == AzurePublicCloud || cloudSpecConfig.CloudName == AzureChinaCloud
+	return cloudSpecConfig.CloudName == AzurePublicCloud || cloudSpecConfig.CloudName == AzureChinaCloud || cloudSpecConfig.CloudName == AzureUSGovernmentCloud
 }
 
 // GetAzureProdFQDN returns the formatted FQDN string for a given apimodel.

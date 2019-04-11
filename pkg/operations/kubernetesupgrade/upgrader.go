@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/Azure/aks-engine/pkg/api"
 	"github.com/Azure/aks-engine/pkg/armhelpers"
 	"github.com/Azure/aks-engine/pkg/armhelpers/utils"
@@ -36,8 +38,9 @@ type Upgrader struct {
 type vmStatus int
 
 const (
-	defaultTimeout            = time.Minute * 20
-	vmStatusUpgraded vmStatus = iota
+	defaultTimeout                     = time.Minute * 20
+	nodePropertiesCopyTimeout          = time.Minute * 5
+	vmStatusUpgraded          vmStatus = iota
 	vmStatusNotUpgraded
 	vmStatusIgnored
 )
@@ -374,7 +377,7 @@ func (ku *Upgrader) upgradeAgentPools(ctx context.Context) error {
 					newNodeName := newCreatedVMs[0]
 					newCreatedVMs = newCreatedVMs[1:]
 					ku.logger.Infof("Copying custom annotations, labels, taints from old node %s to new node %s...", vm.name, newNodeName)
-					err = ku.copyCustomPropertiesToNewNode(client, vm.name, newNodeName)
+					err = ku.copyCustomPropertiesToNewNode(client, strings.ToLower(vm.name), newNodeName)
 					if err != nil {
 						ku.logger.Warningf("Failed to copy custom annotations, labels, taints from old node %s to new node %s: %v", vm.name, newNodeName, err)
 					}
@@ -505,8 +508,8 @@ func (ku *Upgrader) upgradeAgentScaleSets(ctx context.Context) error {
 			err = operations.SafelyDrainNodeWithClient(
 				client,
 				ku.logger,
-				vmToUpgrade.Name,
-				time.Minute,
+				strings.ToLower(vmToUpgrade.Name),
+				cordonDrainTimeout,
 			)
 			if err != nil {
 				ku.logger.Errorf("Error draining VM in VMSS: %v", err)
@@ -521,7 +524,12 @@ func (ku *Upgrader) upgradeAgentScaleSets(ctx context.Context) error {
 
 			// copy custom properties from old node to new node if the PreserveNodesProperties in AgentPoolProfile is not set to false explicitly.
 			preserveNodesProperties := api.DefaultPreserveNodesProperties
-			poolName, _, _ := utils.VmssNameParts(vmssToUpgrade.Name)
+			var poolName string
+			if vmssToUpgrade.IsWindows {
+				poolName, _ = utils.WindowsVmssNameParts(vmssToUpgrade.Name)
+			} else {
+				poolName, _, _ = utils.VmssNameParts(vmssToUpgrade.Name)
+			}
 			if agentPool, ok := agentPoolMap[poolName]; ok {
 				if agentPool != nil && agentPool.PreserveNodesProperties != nil {
 					preserveNodesProperties = *agentPool.PreserveNodesProperties
@@ -535,10 +543,27 @@ func (ku *Upgrader) upgradeAgentScaleSets(ctx context.Context) error {
 				}
 
 				ku.logger.Infof("Copying custom annotations, labels, taints from old node %s to new node %s...", vmToUpgrade.Name, newNodeName)
+				ch := make(chan struct{}, 1)
+				go func() {
+					for {
+						err = ku.copyCustomPropertiesToNewNode(client, strings.ToLower(vmToUpgrade.Name), strings.ToLower(newNodeName))
+						if err != nil {
+							ku.logger.Warningf("Failed to copy custom annotations, labels, taints from old node %s to new node %s: %v", vmToUpgrade.Name, newNodeName, err)
+							time.Sleep(time.Second * 5)
+						} else {
+							ch <- struct{}{}
+						}
+					}
+				}()
 
-				err = ku.copyCustomPropertiesToNewNode(client, vmToUpgrade.Name, newNodeName)
-				if err != nil {
-					ku.logger.Warningf("Failed to copy custom annotations, labels, taints from old node %s to new node %s: %v", vmToUpgrade.Name, newNodeName, err)
+				for {
+					select {
+					case <-ch:
+						ku.logger.Infof("Successfully copied custom annotations, labels, taints from old node %s to new node %s.", vmToUpgrade.Name, newNodeName)
+					case <-time.After(nodePropertiesCopyTimeout):
+						ku.logger.Errorf("Copying custom annotations, labels, taints from old node %s to new node %s can't complete within %v", vmToUpgrade.Name, newNodeName, nodePropertiesCopyTimeout)
+					}
+					break
 				}
 			}
 
@@ -588,7 +613,7 @@ func (ku *Upgrader) generateUpgradeTemplate(upgradeContainerService *api.Contain
 
 	var templateJSON string
 	var parametersJSON string
-	if templateJSON, parametersJSON, err = templateGenerator.GenerateTemplate(upgradeContainerService, engine.DefaultGeneratorCode, aksEngineVersion); err != nil {
+	if templateJSON, parametersJSON, err = templateGenerator.GenerateTemplateV2(upgradeContainerService, engine.DefaultGeneratorCode, aksEngineVersion); err != nil {
 		return nil, nil, ku.Translator.Errorf("error generating upgrade template: %s", err.Error())
 	}
 
@@ -626,7 +651,7 @@ func (ku *Upgrader) getLastVMNameInVMSS(ctx context.Context, resourceGroup strin
 	}
 
 	if lastVMName == "" {
-		return "", fmt.Errorf("failed to get the last VM name in Scale Set %s", vmScaleSetName)
+		return "", errors.Errorf("failed to get the last VM name in Scale Set %s", vmScaleSetName)
 	}
 
 	return lastVMName, nil

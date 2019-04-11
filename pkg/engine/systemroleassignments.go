@@ -25,7 +25,7 @@ func createVMASRoleAssignment() SystemRoleAssignmentARM {
 	systemRoleAssignment.Name = to.StringPtr("[guid(concat('Microsoft.Compute/virtualMachines/', variables('masterVMNamePrefix'), copyIndex(), 'vmidentity'))]")
 	systemRoleAssignment.Type = to.StringPtr("Microsoft.Authorization/roleAssignments")
 	systemRoleAssignment.RoleAssignmentPropertiesWithScope = &authorization.RoleAssignmentPropertiesWithScope{
-		RoleDefinitionID: to.StringPtr("[variables('readerRoleDefinitionId')]"),
+		RoleDefinitionID: to.StringPtr("[variables('contributorRoleDefinitionId')]"),
 		PrincipalID:      to.StringPtr("[reference(concat('Microsoft.Compute/virtualMachines/', variables('masterVMNamePrefix'), copyIndex()), '2017-03-30', 'Full').identity.principalId]"),
 	}
 	return systemRoleAssignment
@@ -70,7 +70,7 @@ func createAgentVMSSSysRoleAssignment(profile *api.AgentPoolProfile) SystemRoleA
 	systemRoleAssignment.Type = to.StringPtr("Microsoft.Authorization/roleAssignments")
 	systemRoleAssignment.RoleAssignmentPropertiesWithScope = &authorization.RoleAssignmentPropertiesWithScope{
 		RoleDefinitionID: to.StringPtr("[variables('readerRoleDefinitionId')]"),
-		PrincipalID:      to.StringPtr(fmt.Sprintf("[reference(concat('Microsoft.Compute/virtualMachineScaleSets/', variables('%[1]sVMNamePrefix'), '2017-03-30', 'Full').identity.principalId]", profile.Name)),
+		PrincipalID:      to.StringPtr(fmt.Sprintf("[reference(concat('Microsoft.Compute/virtualMachineScaleSets/', variables('%[1]sVMNamePrefix')), '2017-03-30', 'Full').identity.principalId]", profile.Name)),
 	}
 
 	return systemRoleAssignment

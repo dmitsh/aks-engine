@@ -43,7 +43,7 @@ func CreateMockContainerService(containerServiceName, orchestratorVersion string
 	agentPool.Count = agentCount
 	agentPool.Name = "agentpool1"
 	agentPool.VMSize = "Standard_D2_v2"
-	agentPool.OSType = "Linux"
+	agentPool.OSType = Linux
 	agentPool.AvailabilityProfile = "AvailabilitySet"
 	agentPool.StorageProfile = "StorageAccount"
 
@@ -68,22 +68,23 @@ func CreateMockContainerService(containerServiceName, orchestratorVersion string
 	cs.Properties.OrchestratorProfile.OrchestratorType = Kubernetes
 	cs.Properties.OrchestratorProfile.OrchestratorVersion = orchestratorVersion
 	cs.Properties.OrchestratorProfile.KubernetesConfig = &KubernetesConfig{
-		EnableSecureKubelet: to.BoolPtr(DefaultSecureKubeletEnabled),
-		EnableRbac:          to.BoolPtr(DefaultRBACEnabled),
-		EtcdDiskSizeGB:      DefaultEtcdDiskSize,
-		ServiceCIDR:         DefaultKubernetesServiceCIDR,
-		DockerBridgeSubnet:  DefaultDockerBridgeSubnet,
-		DNSServiceIP:        DefaultKubernetesDNSServiceIP,
-		GCLowThreshold:      DefaultKubernetesGCLowThreshold,
-		GCHighThreshold:     DefaultKubernetesGCHighThreshold,
-		MaxPods:             DefaultKubernetesMaxPodsVNETIntegrated,
-		ClusterSubnet:       DefaultKubernetesSubnet,
-		ContainerRuntime:    DefaultContainerRuntime,
-		NetworkPlugin:       DefaultNetworkPlugin,
-		NetworkPolicy:       DefaultNetworkPolicy,
-		EtcdVersion:         DefaultEtcdVersion,
-		MobyVersion:         DefaultMobyVersion,
-		KubeletConfig:       make(map[string]string),
+		EnableSecureKubelet:     to.BoolPtr(DefaultSecureKubeletEnabled),
+		EnableRbac:              to.BoolPtr(DefaultRBACEnabled),
+		EtcdDiskSizeGB:          DefaultEtcdDiskSize,
+		ServiceCIDR:             DefaultKubernetesServiceCIDR,
+		DockerBridgeSubnet:      DefaultDockerBridgeSubnet,
+		DNSServiceIP:            DefaultKubernetesDNSServiceIP,
+		GCLowThreshold:          DefaultKubernetesGCLowThreshold,
+		GCHighThreshold:         DefaultKubernetesGCHighThreshold,
+		MaxPods:                 DefaultKubernetesMaxPodsVNETIntegrated,
+		ClusterSubnet:           DefaultKubernetesSubnet,
+		ContainerRuntime:        DefaultContainerRuntime,
+		NetworkPlugin:           DefaultNetworkPlugin,
+		NetworkPolicy:           DefaultNetworkPolicy,
+		EtcdVersion:             DefaultEtcdVersion,
+		MobyVersion:             DefaultMobyVersion,
+		KubeletConfig:           make(map[string]string),
+		ControllerManagerConfig: make(map[string]string),
 	}
 
 	cs.Properties.CertificateProfile = &CertificateProfile{}

@@ -403,7 +403,7 @@ func TestStaticWindowsConfig(t *testing.T) {
 
 	cs.setKubeletConfig()
 	for _, profile := range cs.Properties.AgentPoolProfiles {
-		if profile.OSType == "Windows" {
+		if profile.OSType == Windows {
 			for key, val := range staticWindowsKubeletConfig {
 				if val != profile.KubernetesConfig.KubeletConfig[key] {
 					t.Fatalf("got unexpected '%s' kubelet config value, expected %s, got %s",
@@ -411,5 +411,95 @@ func TestStaticWindowsConfig(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestUbuntu1804Flags(t *testing.T) {
+	// Validate --resolv-conf is missing with 16.04 distro and present with 18.04
+	cs := CreateMockContainerService("testcluster", "1.10.13", 3, 2, false)
+	cs.Properties.MasterProfile.Distro = AKS
+	cs.Properties.AgentPoolProfiles[0].Distro = AKS1804
+	cs.Properties.AgentPoolProfiles[0].OSType = Linux
+	cs.setKubeletConfig()
+	km := cs.Properties.MasterProfile.KubernetesConfig.KubeletConfig
+	if _, ok := km["--resolv-conf"]; ok {
+		t.Fatalf("got unexpected '--resolv-conf' kubelet config value '%s' with Ubuntu 16.04 ",
+			km["--resolv-conf"])
+	}
+	ka := cs.Properties.AgentPoolProfiles[0].KubernetesConfig.KubeletConfig
+	if ka["--resolv-conf"] != "/run/systemd/resolve/resolv.conf" {
+		t.Fatalf("got unexpected '--resolv-conf' kubelet config value %s with Ubuntu 18.04, the expected value is %s",
+			ka["--resolv-conf"], "/run/systemd/resolve/resolv.conf")
+	}
+
+	cs = CreateMockContainerService("testcluster", "1.10.13", 3, 2, false)
+	cs.Properties.MasterProfile.Distro = Ubuntu1804
+	cs.Properties.AgentPoolProfiles[0].Distro = Ubuntu
+	cs.Properties.AgentPoolProfiles[0].OSType = Linux
+	cs.setKubeletConfig()
+	km = cs.Properties.MasterProfile.KubernetesConfig.KubeletConfig
+	if km["--resolv-conf"] != "/run/systemd/resolve/resolv.conf" {
+		t.Fatalf("got unexpected '--resolv-conf' kubelet config value %s with Ubuntu 18.04, the expected value is %s",
+			km["--resolv-conf"], "/run/systemd/resolve/resolv.conf")
+	}
+	ka = cs.Properties.AgentPoolProfiles[0].KubernetesConfig.KubeletConfig
+	if _, ok := ka["--resolv-conf"]; ok {
+		t.Fatalf("got unexpected '--resolv-conf' kubelet config value '%s' with Ubuntu 16.04 ",
+			ka["--resolv-conf"])
+	}
+
+	cs = CreateMockContainerService("testcluster", "1.10.13", 3, 2, false)
+	cs.Properties.MasterProfile.Distro = Ubuntu
+	cs.Properties.AgentPoolProfiles[0].Distro = ""
+	cs.Properties.AgentPoolProfiles[0].OSType = Windows
+	cs.setKubeletConfig()
+	km = cs.Properties.MasterProfile.KubernetesConfig.KubeletConfig
+	if _, ok := km["--resolv-conf"]; ok {
+		t.Fatalf("got unexpected '--resolv-conf' kubelet config value '%s' with Ubuntu 16.04 ",
+			km["--resolv-conf"])
+	}
+	ka = cs.Properties.AgentPoolProfiles[0].KubernetesConfig.KubeletConfig
+	if ka["--resolv-conf"] != "\"\"\"\"" {
+		t.Fatalf("got unexpected '--resolv-conf' kubelet config value %s with Windows, the expected value is %s",
+			ka["--resolv-conf"], "\"\"\"\"")
+	}
+}
+
+func TestKubeletConfigDefaultFeatureGates(t *testing.T) {
+	// test 1.7
+	cs := CreateMockContainerService("testcluster", "1.7.12", 3, 2, false)
+	cs.setKubeletConfig()
+	k := cs.Properties.OrchestratorProfile.KubernetesConfig.KubeletConfig
+	if k["--feature-gates"] != "" {
+		t.Fatalf("got unexpected '--feature-gates' kubelet config value for \"--feature-gates\": \"\": %s",
+			k["--feature-gates"])
+	}
+
+	// test 1.8
+	cs = CreateMockContainerService("testcluster", "1.8.15", 3, 2, false)
+	cs.setKubeletConfig()
+	k = cs.Properties.OrchestratorProfile.KubernetesConfig.KubeletConfig
+	if k["--feature-gates"] != "PodPriority=true" {
+		t.Fatalf("got unexpected '--feature-gates' kubelet config value for \"--feature-gates\": \"\": %s",
+			k["--feature-gates"])
+	}
+
+	// test 1.14
+	cs = CreateMockContainerService("testcluster", "1.14.1", 3, 2, false)
+	cs.setKubeletConfig()
+	k = cs.Properties.OrchestratorProfile.KubernetesConfig.KubeletConfig
+	if k["--feature-gates"] != "PodPriority=true" {
+		t.Fatalf("got unexpected '--feature-gates' kubelet config value for \"--feature-gates\": \"\": %s",
+			k["--feature-gates"])
+	}
+
+	// test user-overrides
+	cs = CreateMockContainerService("testcluster", "1.14.1", 3, 2, false)
+	k = cs.Properties.OrchestratorProfile.KubernetesConfig.KubeletConfig
+	k["--feature-gates"] = "DynamicKubeletConfig=true"
+	cs.setKubeletConfig()
+	if k["--feature-gates"] != "DynamicKubeletConfig=true,PodPriority=true" {
+		t.Fatalf("got unexpected '--feature-gates' kubelet config value for \"--feature-gates\": \"\": %s",
+			k["--feature-gates"])
 	}
 }

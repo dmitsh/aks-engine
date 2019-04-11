@@ -25,7 +25,7 @@ GITTAG := $(VERSION_SHORT)
 endif
 
 REPO_PATH := github.com/Azure/$(PROJECT)
-DEV_ENV_IMAGE := quay.io/deis/go-dev:v1.19.1
+DEV_ENV_IMAGE := quay.io/deis/go-dev:v1.21.0
 DEV_ENV_WORK_DIR := /go/src/${REPO_PATH}
 DEV_ENV_OPTS := --rm -v ${CURDIR}:${DEV_ENV_WORK_DIR} -w ${DEV_ENV_WORK_DIR} ${DEV_ENV_VARS}
 DEV_ENV_CMD := docker run ${DEV_ENV_OPTS} ${DEV_ENV_IMAGE}
@@ -72,7 +72,7 @@ generate: bootstrap
 
 .PHONY: generate-azure-constants
 generate-azure-constants:
-	python pkg/helpers/Get-AzureConstants.py
+	python pkg/helpers/generate_azure_constants.py
 
 .PHONY: build
 build: generate
@@ -135,6 +135,7 @@ test: generate
 
 .PHONY: test-style
 test-style:
+	@scripts/validate-shell.sh
 	@scripts/validate-go.sh
 
 .PHONY: ensure-generated

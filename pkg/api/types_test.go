@@ -736,6 +736,88 @@ func TestHasAvailabilityZones(t *testing.T) {
 	}
 }
 
+func TestUbuntuVersion(t *testing.T) {
+	cases := []struct {
+		p                  Properties
+		expectedMaster1604 bool
+		expectedAgent1604  bool
+		expectedMaster1804 bool
+		expectedAgent1804  bool
+	}{
+		{
+			p: Properties{
+				MasterProfile: &MasterProfile{
+					Count:  1,
+					Distro: AKS,
+				},
+				AgentPoolProfiles: []*AgentPoolProfile{
+					{
+						Count:  1,
+						Distro: AKS,
+						OSType: Linux,
+					},
+				},
+			},
+			expectedMaster1604: true,
+			expectedAgent1604:  true,
+			expectedMaster1804: false,
+			expectedAgent1804:  false,
+		},
+		{
+			p: Properties{
+				MasterProfile: &MasterProfile{
+					Count:  1,
+					Distro: AKS1804,
+				},
+				AgentPoolProfiles: []*AgentPoolProfile{
+					{
+						Count:  1,
+						Distro: ACC1604,
+					},
+				},
+			},
+			expectedMaster1604: false,
+			expectedAgent1604:  true,
+			expectedMaster1804: true,
+			expectedAgent1804:  false,
+		},
+		{
+			p: Properties{
+				MasterProfile: &MasterProfile{
+					Count:  1,
+					Distro: Ubuntu,
+				},
+				AgentPoolProfiles: []*AgentPoolProfile{
+					{
+						Count:  1,
+						Distro: "",
+						OSType: Windows,
+					},
+				},
+			},
+			expectedMaster1604: true,
+			expectedAgent1604:  false,
+			expectedMaster1804: false,
+			expectedAgent1804:  false,
+		},
+	}
+
+	for _, c := range cases {
+		if c.p.MasterProfile.IsUbuntu1604() != c.expectedMaster1604 {
+			t.Fatalf("expected IsUbuntu1604() for master to return %t but instead returned %t", c.expectedMaster1604, c.p.MasterProfile.IsUbuntu1604())
+		}
+		if c.p.AgentPoolProfiles[0].IsUbuntu1604() != c.expectedAgent1604 {
+			t.Fatalf("expected IsUbuntu1604() for agent to return %t but instead returned %t", c.expectedAgent1604, c.p.AgentPoolProfiles[0].IsUbuntu1604())
+		}
+		if c.p.MasterProfile.IsUbuntu1804() != c.expectedMaster1804 {
+			t.Fatalf("expected IsUbuntu1804() for master to return %t but instead returned %t", c.expectedMaster1804, c.p.MasterProfile.IsUbuntu1804())
+		}
+		if c.p.AgentPoolProfiles[0].IsUbuntu1804() != c.expectedAgent1804 {
+			t.Fatalf("expected IsUbuntu1804() for agent to return %t but instead returned %t", c.expectedAgent1804, c.p.AgentPoolProfiles[0].IsUbuntu1804())
+		}
+	}
+}
+
 func TestRequireRouteTable(t *testing.T) {
 	cases := []struct {
 		p        Properties
@@ -765,7 +847,7 @@ func TestRequireRouteTable(t *testing.T) {
 				OrchestratorProfile: &OrchestratorProfile{
 					OrchestratorType: Kubernetes,
 					KubernetesConfig: &KubernetesConfig{
-						NetworkPlugin: "azure",
+						NetworkPlugin: NetworkPluginAzure,
 					},
 				},
 			},
@@ -791,9 +873,76 @@ func TestRequireRouteTable(t *testing.T) {
 	}
 }
 
+func TestIsPrivateCluster(t *testing.T) {
+	cases := []struct {
+		p        Properties
+		expected bool
+	}{
+		{
+			p: Properties{
+				OrchestratorProfile: &OrchestratorProfile{
+					OrchestratorType: DCOS,
+				},
+			},
+			expected: false,
+		},
+		{
+			p: Properties{
+				OrchestratorProfile: &OrchestratorProfile{
+					OrchestratorType: Kubernetes,
+				},
+			},
+			expected: false,
+		},
+		{
+			p: Properties{
+				OrchestratorProfile: &OrchestratorProfile{
+					OrchestratorType: Kubernetes,
+					KubernetesConfig: &KubernetesConfig{
+						PrivateCluster: &PrivateCluster{
+							Enabled: to.BoolPtr(true),
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			p: Properties{
+				OrchestratorProfile: &OrchestratorProfile{
+					OrchestratorType: Kubernetes,
+					KubernetesConfig: &KubernetesConfig{
+						PrivateCluster: &PrivateCluster{
+							Enabled: to.BoolPtr(false),
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			p: Properties{
+				OrchestratorProfile: &OrchestratorProfile{
+					OrchestratorType: Kubernetes,
+					KubernetesConfig: &KubernetesConfig{
+						PrivateCluster: &PrivateCluster{},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, c := range cases {
+		if c.p.OrchestratorProfile.IsPrivateCluster() != c.expected {
+			t.Fatalf("expected IsPrivateCluster() to return %t but instead got %t", c.expected, c.p.OrchestratorProfile.IsPrivateCluster())
+		}
+	}
+}
+
 func TestIsAzureCNI(t *testing.T) {
 	k := &KubernetesConfig{
-		NetworkPlugin: "azure",
+		NetworkPlugin: NetworkPluginAzure,
 	}
 
 	o := &OrchestratorProfile{
@@ -2544,7 +2693,7 @@ func TestGetAgentVMPrefix(t *testing.T) {
 				Name:   "agentpool",
 				VMSize: "Standard_D2_v2",
 				Count:  1,
-				OSType: "Linux",
+				OSType: Linux,
 			},
 			properties: &Properties{
 				OrchestratorProfile: &OrchestratorProfile{
@@ -2560,7 +2709,7 @@ func TestGetAgentVMPrefix(t *testing.T) {
 						Name:   "agentpool",
 						VMSize: "Standard_D2_v2",
 						Count:  1,
-						OSType: "Linux",
+						OSType: Linux,
 					},
 				},
 			},
@@ -2573,7 +2722,7 @@ func TestGetAgentVMPrefix(t *testing.T) {
 				VMSize:              "Standard_D2_v2",
 				Count:               1,
 				AvailabilityProfile: "VirtualMachineScaleSets",
-				OSType:              "Linux",
+				OSType:              Linux,
 			},
 			properties: &Properties{
 				OrchestratorProfile: &OrchestratorProfile{
@@ -2590,7 +2739,7 @@ func TestGetAgentVMPrefix(t *testing.T) {
 						VMSize:              "Standard_D2_v2",
 						Count:               1,
 						AvailabilityProfile: "VirtualMachineScaleSets",
-						OSType:              "Linux",
+						OSType:              Linux,
 					},
 				},
 			},
@@ -2602,7 +2751,7 @@ func TestGetAgentVMPrefix(t *testing.T) {
 				Name:   "agentpool",
 				VMSize: "Standard_D2_v2",
 				Count:  1,
-				OSType: "Windows",
+				OSType: Windows,
 			},
 			properties: &Properties{
 				OrchestratorProfile: &OrchestratorProfile{
@@ -2618,7 +2767,7 @@ func TestGetAgentVMPrefix(t *testing.T) {
 						Name:   "agentpool",
 						VMSize: "Standard_D2_v2",
 						Count:  1,
-						OSType: "Windows",
+						OSType: Windows,
 					},
 				},
 			},
@@ -2630,7 +2779,7 @@ func TestGetAgentVMPrefix(t *testing.T) {
 				Name:   "something",
 				VMSize: "Standard_D2_v2",
 				Count:  1,
-				OSType: "Windows",
+				OSType: Windows,
 			},
 			properties: &Properties{
 				OrchestratorProfile: &OrchestratorProfile{
@@ -2701,6 +2850,8 @@ func TestFormatAzureProdFQDN(t *testing.T) {
 		"santest.koreasouth.cloudapp.azure.com",
 		"santest.northcentralus.cloudapp.azure.com",
 		"santest.northeurope.cloudapp.azure.com",
+		"santest.southafricanorth.cloudapp.azure.com",
+		"santest.southafricawest.cloudapp.azure.com",
 		"santest.southcentralus.cloudapp.azure.com",
 		"santest.southeastasia.cloudapp.azure.com",
 		"santest.southindia.cloudapp.azure.com",
@@ -2767,6 +2918,8 @@ func TestFormatProdFQDNByLocation(t *testing.T) {
 		"santest.koreasouth.cloudapp.azure.com",
 		"santest.northcentralus.cloudapp.azure.com",
 		"santest.northeurope.cloudapp.azure.com",
+		"santest.southafricanorth.cloudapp.azure.com",
+		"santest.southafricawest.cloudapp.azure.com",
 		"santest.southcentralus.cloudapp.azure.com",
 		"santest.southeastasia.cloudapp.azure.com",
 		"santest.southindia.cloudapp.azure.com",
@@ -2891,7 +3044,7 @@ func TestProperties_GetMasterVMPrefix(t *testing.T) {
 				VMSize:              "Standard_D2_v2",
 				Count:               1,
 				AvailabilityProfile: "VirtualMachineScaleSets",
-				OSType:              "Linux",
+				OSType:              Linux,
 			},
 		},
 	}
@@ -3053,12 +3206,12 @@ func TestIsAzureStackCloud(t *testing.T) {
 		{
 			"Empty environment name",
 			getMockPropertiesWithCustomCloudProfile("", true, true, false),
-			false,
+			true,
 		},
 		{
 			"Empty environment name with AzureEnvironmentSpecConfig",
 			getMockPropertiesWithCustomCloudProfile("", true, true, true),
-			false,
+			true,
 		},
 		{
 			"lower case cloud name",
@@ -3073,7 +3226,7 @@ func TestIsAzureStackCloud(t *testing.T) {
 		{
 			"incorrect cloud name",
 			getMockPropertiesWithCustomCloudProfile("NotAzureStackCloud", true, true, true),
-			false,
+			true,
 		},
 		{
 			"empty cloud profile",
@@ -3083,7 +3236,7 @@ func TestIsAzureStackCloud(t *testing.T) {
 		{
 			"empty environment ",
 			getMockPropertiesWithCustomCloudProfile("AzureStackCloud", true, false, true),
-			false,
+			true,
 		},
 	}
 	for _, testcase := range testcases {
@@ -3141,7 +3294,10 @@ func TestGetCustomEnvironmentJSON(t *testing.T) {
 		},
 	}
 	for _, testcase := range testcases {
-		actual := testcase.properties.GetCustomEnvironmentJSON(testcase.escape)
+		actual, err := testcase.properties.GetCustomEnvironmentJSON(testcase.escape)
+		if err != nil {
+			t.Error(err)
+		}
 		if testcase.expected != actual {
 			t.Errorf("Test \"%s\": expected GetCustomEnvironmentJSON() to return %s, but got %s . ", testcase.name, testcase.expected, actual)
 		}
@@ -3192,6 +3348,8 @@ func TestGetLocations(t *testing.T) {
 		"koreasouth",
 		"northcentralus",
 		"northeurope",
+		"southafricanorth",
+		"southafricawest",
 		"southcentralus",
 		"southeastasia",
 		"southindia",
@@ -3333,11 +3491,10 @@ func getMockPropertiesWithCustomCloudProfile(name string, hasCustomCloudProfile,
 					ResourceManagerVMDNSSuffix: "",
 				},
 				OSImageConfig: map[Distro]AzureOSImageConfig{
-					Ubuntu:          DefaultUbuntuImageConfig,
-					RHEL:            DefaultRHELOSImageConfig,
-					CoreOS:          DefaultCoreOSImageConfig,
-					AKS:             DefaultAKSOSImageConfig,
-					AKSDockerEngine: DefaultAKSDockerEngineOSImageConfig,
+					Ubuntu: DefaultUbuntuImageConfig,
+					RHEL:   DefaultRHELOSImageConfig,
+					CoreOS: DefaultCoreOSImageConfig,
+					AKS:    DefaultAKSOSImageConfig,
 				},
 			}
 			p.CustomCloudProfile.AzureEnvironmentSpecConfig = &azureStackCloudSpec

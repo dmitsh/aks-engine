@@ -319,13 +319,6 @@
       "type": "string"
     },
 {{end}}
-    "dockerEngineDownloadRepo": {
-      "defaultValue": "https://aptdocker.azureedge.net/repo",
-      "metadata": {
-        "description": "The Docker Engine download URL for Kubernetes."
-      },
-      "type": "string"
-    },
     "mobyVersion": {
       "defaultValue": "3.0.4",
       "metadata": {
@@ -533,7 +526,7 @@
       "type": "string"
     }
 {{end}}
-{{if HasCustomSearchDomain}}
+{{if HasLinuxProfile}}{{if HasCustomSearchDomain}}
     ,"searchDomainName": {
       "defaultValue": "",
       "metadata": {
@@ -555,8 +548,8 @@
       },
       "type": "securestring"
     }
-{{end}}
-{{if HasCustomNodesDNS}}
+{{end}}{{end}}
+{{if HasLinuxProfile}}{{if HasCustomNodesDNS}}
     ,"dnsServer": {
       "defaultValue": "",
       "metadata": {
@@ -564,7 +557,7 @@
       },
       "type": "string"
     }
-{{end}}
+{{end}}{{end}}
 
 {{if EnableEncryptionWithExternalKms}}
    ,

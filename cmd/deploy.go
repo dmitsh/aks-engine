@@ -188,14 +188,6 @@ func (dc *deployCmd) loadAPIModel(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(err, "error parsing the api model")
 	}
 
-	if dc.outputDirectory == "" {
-		if dc.containerService.Properties.MasterProfile != nil {
-			dc.outputDirectory = path.Join("_output", dc.containerService.Properties.MasterProfile.DNSPrefix)
-		} else {
-			dc.outputDirectory = path.Join("_output", dc.containerService.Properties.HostedMasterProfile.DNSPrefix)
-		}
-	}
-
 	// consume dc.caCertificatePath and dc.caPrivateKeyPath
 	if (dc.caCertificatePath != "" && dc.caPrivateKeyPath == "") || (dc.caCertificatePath == "" && dc.caPrivateKeyPath != "") {
 		return errors.New("--ca-certificate-path and --ca-private-key-path must be specified together")
@@ -221,6 +213,15 @@ func (dc *deployCmd) loadAPIModel(cmd *cobra.Command, args []string) error {
 		dc.containerService.Location = dc.location
 	} else if dc.containerService.Location != dc.location {
 		return errors.New("--location does not match api model location")
+	}
+
+	if dc.containerService.Properties.IsAzureStackCloud() {
+		dc.containerService.SetCustomCloudProfileEnvironment()
+		err = dc.containerService.SetCustomCloudProfileEnvironment()
+		if err != nil {
+			return fmt.Errorf("Failed to set environment - %s", err)
+		}
+		writeCustomCloudProfile(dc.containerService)
 	}
 
 	if err = dc.getAuthArgs().validateAuthArgs(); err != nil {
@@ -268,7 +269,11 @@ func autofillApimodel(dc *deployCmd) error {
 	}
 
 	if dc.outputDirectory == "" {
-		dc.outputDirectory = path.Join("_output", dc.containerService.Properties.MasterProfile.DNSPrefix)
+		if dc.containerService.Properties.MasterProfile != nil {
+			dc.outputDirectory = path.Join("_output", dc.containerService.Properties.MasterProfile.DNSPrefix)
+		} else {
+			dc.outputDirectory = path.Join("_output", dc.containerService.Properties.HostedMasterProfile.DNSPrefix)
+		}
 	}
 
 	if _, err = os.Stat(dc.outputDirectory); !dc.forceOverwrite && err == nil {
@@ -391,9 +396,7 @@ func (dc *deployCmd) run() error {
 		return errors.Wrapf(err, "in SetPropertiesDefaults template %s", dc.apimodelPath)
 	}
 
-	template, parameters, err := templateGenerator.GenerateTemplate(dc.containerService, engine.DefaultGeneratorCode, BuildTag)
-	//TODO enable GenerateTemplateV2 when new template generation flow has been validated!
-	//template, parameters, err := templateGenerator.GenerateTemplateV2(dc.containerService, engine.DefaultGeneratorCode, BuildTag)
+	template, parameters, err := templateGenerator.GenerateTemplateV2(dc.containerService, engine.DefaultGeneratorCode, BuildTag)
 	if err != nil {
 		return errors.Wrapf(err, "generating template %s", dc.apimodelPath)
 	}

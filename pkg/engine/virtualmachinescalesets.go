@@ -23,9 +23,12 @@ func CreateMasterVMSS(cs *api.ContainerService) VirtualMachineScaleSetARM {
 
 	isCustomVnet := masterProfile.IsCustomVNET()
 	hasAvailabilityZones := masterProfile.HasAvailabilityZones()
-	useManagedIdentity := k8sConfig.UseManagedIdentity
-	userAssignedIDEnabled := k8sConfig.UseManagedIdentity &&
-		k8sConfig.UserAssignedID != ""
+
+	var useManagedIdentity, userAssignedIDEnabled bool
+	if k8sConfig != nil {
+		useManagedIdentity = k8sConfig.UseManagedIdentity
+		userAssignedIDEnabled = useManagedIdentity && k8sConfig.UserAssignedID != ""
+	}
 	isAzureCNI := orchProfile.IsAzureCNI()
 	masterCount := masterProfile.Count
 
@@ -66,9 +69,7 @@ func CreateMasterVMSS(cs *api.ContainerService) VirtualMachineScaleSetARM {
 	}
 
 	if hasAvailabilityZones {
-		virtualMachine.Zones = &[]string{
-			"[parameters('availabilityZones')]",
-		}
+		virtualMachine.Zones = &masterProfile.AvailabilityZones
 	}
 
 	if useManagedIdentity && userAssignedIDEnabled {
@@ -147,7 +148,7 @@ func CreateMasterVMSS(cs *api.ContainerService) VirtualMachineScaleSetARM {
 	}
 	netintconfig.IPConfigurations = &ipConfigurations
 
-	if linuxProfile.HasCustomNodesDNS() {
+	if linuxProfile != nil && linuxProfile.HasCustomNodesDNS() {
 		netintconfig.DNSSettings = &compute.VirtualMachineScaleSetNetworkConfigurationDNSSettings{
 			DNSServers: &[]string{
 				"[parameters('dnsServer')]",
@@ -155,7 +156,7 @@ func CreateMasterVMSS(cs *api.ContainerService) VirtualMachineScaleSetARM {
 		}
 	}
 
-	if !isAzureCNI {
+	if !isAzureCNI && !cs.Properties.IsAzureStackCloud() {
 		netintconfig.EnableIPForwarding = to.BoolPtr(true)
 	}
 
@@ -173,10 +174,10 @@ func CreateMasterVMSS(cs *api.ContainerService) VirtualMachineScaleSetARM {
 		},
 	}
 
-	if len(cs.Properties.LinuxProfile.SSH.PublicKeys) > 1 {
+	if linuxProfile != nil && len(linuxProfile.SSH.PublicKeys) > 1 {
 		publicKeyPath := "[variables('sshKeyPath')]"
 		var publicKeys []compute.SSHPublicKey
-		for _, publicKey := range cs.Properties.LinuxProfile.SSH.PublicKeys {
+		for _, publicKey := range linuxProfile.SSH.PublicKeys {
 			publicKeyTrimmed := strings.TrimSpace(publicKey.KeyData)
 			publicKeys = append(publicKeys, compute.SSHPublicKey{
 				Path:    &publicKeyPath,
@@ -200,15 +201,15 @@ func CreateMasterVMSS(cs *api.ContainerService) VirtualMachineScaleSetARM {
 
 	t, err := InitializeTemplateGenerator(Context{})
 
-	customDataStr := getCustomDataFromJSON(t.GetMasterCustomDataJSON(cs))
+	customDataStr := getCustomDataFromJSON(t.GetMasterCustomDataJSONObject(cs))
 	osProfile.CustomData = to.StringPtr(customDataStr)
 
 	if err != nil {
 		panic(err)
 	}
 
-	if linuxProfile.HasSecrets() {
-		vsg := getVaultSecretGroup(cs.Properties.LinuxProfile)
+	if linuxProfile != nil && linuxProfile.HasSecrets() {
+		vsg := getVaultSecretGroup(linuxProfile)
 		osProfile.Secrets = &vsg
 	}
 
@@ -371,12 +372,13 @@ func CreateAgentVMSS(cs *api.ContainerService, profile *api.AgentPoolProfile) Vi
 	}
 
 	if profile.HasAvailabilityZones() {
-		virtualMachineScaleSet.Zones = &[]string{
-			fmt.Sprintf("[parameters('%sAvailabilityZones')]", profile.Name),
-		}
+		virtualMachineScaleSet.Zones = &profile.AvailabilityZones
 	}
 
-	useManagedIdentity := k8sConfig.UseManagedIdentity
+	var useManagedIdentity bool
+	if k8sConfig != nil {
+		useManagedIdentity = k8sConfig.UseManagedIdentity
+	}
 	if useManagedIdentity {
 		userAssignedIdentityEnabled := k8sConfig.UserAssignedID != ""
 		if userAssignedIdentityEnabled {
@@ -445,7 +447,7 @@ func CreateAgentVMSS(cs *api.ContainerService, profile *api.AgentPoolProfile) Vi
 
 	vmssNICConfig.IPConfigurations = &ipConfigurations
 
-	if linuxProfile.HasCustomNodesDNS() && !profile.IsWindows() {
+	if linuxProfile != nil && linuxProfile.HasCustomNodesDNS() && !profile.IsWindows() {
 		vmssNICConfig.DNSSettings = &compute.VirtualMachineScaleSetNetworkConfigurationDNSSettings{
 			DNSServers: &[]string{
 				"[parameters('dnsServer')]",
@@ -453,7 +455,7 @@ func CreateAgentVMSS(cs *api.ContainerService, profile *api.AgentPoolProfile) Vi
 		}
 	}
 
-	if !orchProfile.IsAzureCNI() {
+	if !orchProfile.IsAzureCNI() && !cs.Properties.IsAzureStackCloud() {
 		vmssNICConfig.EnableIPForwarding = to.BoolPtr(true)
 	}
 
@@ -473,10 +475,11 @@ func CreateAgentVMSS(cs *api.ContainerService, profile *api.AgentPoolProfile) Vi
 
 	if profile.IsWindows() {
 
-		customDataStr := getCustomDataFromJSON(t.GetKubernetesWindowsAgentCustomDataJSON(cs, profile))
+		customDataStr := getCustomDataFromJSON(t.GetKubernetesWindowsNodeCustomDataJSONObject(cs, profile))
 		windowsOsProfile := compute.VirtualMachineScaleSetOSProfile{
-			AdminUsername: to.StringPtr("[parameters('windowsAdminUsername')]"),
-			AdminPassword: to.StringPtr("[parameters('windowsAdminPassword')]"),
+			AdminUsername:      to.StringPtr("[parameters('windowsAdminUsername')]"),
+			AdminPassword:      to.StringPtr("[parameters('windowsAdminPassword')]"),
+			ComputerNamePrefix: to.StringPtr(fmt.Sprintf("[variables('%sVMNamePrefix')]", profile.Name)),
 			WindowsConfiguration: &compute.WindowsConfiguration{
 				EnableAutomaticUpdates: to.BoolPtr(cs.Properties.WindowsProfile.GetEnableWindowsUpdate()),
 			},
@@ -484,7 +487,7 @@ func CreateAgentVMSS(cs *api.ContainerService, profile *api.AgentPoolProfile) Vi
 		}
 		vmssVMProfile.OsProfile = &windowsOsProfile
 	} else {
-		customDataStr := getCustomDataFromJSON(t.GetKubernetesAgentCustomDataJSON(cs, profile))
+		customDataStr := getCustomDataFromJSON(t.GetKubernetesLinuxNodeCustomDataJSONObject(cs, profile))
 		linuxOsProfile := compute.VirtualMachineScaleSetOSProfile{
 			AdminUsername:      to.StringPtr("[parameters('linuxAdminUsername')]"),
 			ComputerNamePrefix: to.StringPtr(fmt.Sprintf("[variables('%sVMNamePrefix')]", profile.Name)),
@@ -494,10 +497,10 @@ func CreateAgentVMSS(cs *api.ContainerService, profile *api.AgentPoolProfile) Vi
 			},
 		}
 
-		if len(cs.Properties.LinuxProfile.SSH.PublicKeys) > 1 {
+		if linuxProfile != nil && len(linuxProfile.SSH.PublicKeys) > 1 {
 			publicKeyPath := "[variables('sshKeyPath')]"
 			var publicKeys []compute.SSHPublicKey
-			for _, publicKey := range cs.Properties.LinuxProfile.SSH.PublicKeys {
+			for _, publicKey := range linuxProfile.SSH.PublicKeys {
 				publicKeyTrimmed := strings.TrimSpace(publicKey.KeyData)
 				publicKeys = append(publicKeys, compute.SSHPublicKey{
 					Path:    &publicKeyPath,
@@ -519,8 +522,8 @@ func CreateAgentVMSS(cs *api.ContainerService, profile *api.AgentPoolProfile) Vi
 			}
 		}
 
-		if linuxProfile.HasSecrets() {
-			vsg := getVaultSecretGroup(cs.Properties.LinuxProfile)
+		if linuxProfile != nil && linuxProfile.HasSecrets() {
+			vsg := getVaultSecretGroup(linuxProfile)
 			linuxOsProfile.Secrets = &vsg
 		}
 
@@ -638,8 +641,18 @@ func CreateAgentVMSS(cs *api.ContainerService, profile *api.AgentPoolProfile) Vi
 			},
 		}
 
-		if profile.IsWindows() {
-			aksBillingExtension.Type = to.StringPtr("Compute.AKS-Engine.Windows.Billing")
+		if cs.Properties.IsHostedMasterProfile() {
+			if profile.IsWindows() {
+				aksBillingExtension.Type = to.StringPtr("Compute.AKS.Windows.Billing")
+			} else {
+				aksBillingExtension.Type = to.StringPtr("Compute.AKS.Linux.Billing")
+			}
+		} else {
+			if profile.IsWindows() {
+				aksBillingExtension.Type = to.StringPtr("Compute.AKS-Engine.Windows.Billing")
+			} else {
+				aksBillingExtension.Type = to.StringPtr("Compute.AKS-Engine.Linux.Billing")
+			}
 		}
 
 		vmssExtensions = append(vmssExtensions, aksBillingExtension)
@@ -669,10 +682,6 @@ func getVMSSDataDisks(profile *api.AgentPoolProfile) *[]compute.VirtualMachineSc
 		}
 		if profile.StorageProfile == api.StorageAccount {
 			dataDisk.Name = to.StringPtr(fmt.Sprintf("[concat(variables('%sVMNamePrefix'), copyIndex(),'-datadisk%d')]", profile.Name, i))
-			//dataDisk.Vhd = &compute.VirtualHardDisk{
-			//	URI: to.StringPtr(fmt.Sprintf("[concat('http://',variables('storageAccountPrefixes')[mod(add(add(div(copyIndex(),variables('maxVMsPerStorageAccount')),variables('%sStorageAccountOffset')),variables('dataStorageAccountPrefixSeed')),variables('storageAccountPrefixesCount'))],variables('storageAccountPrefixes')[div(add(add(div(copyIndex(),variables('maxVMsPerStorageAccount')),variables('%sStorageAccountOffset')),variables('dataStorageAccountPrefixSeed')),variables('storageAccountPrefixesCount'))],variables('%sDataAccountName'),'.blob.core.windows.net/vhds/',variables('%sVMNamePrefix'),copyIndex(), '--datadisk%d.vhd')]",
-			//		profile.Name, profile.Name, profile.Name, profile.Name, i)),
-			//}
 		}
 		dataDisks = append(dataDisks, dataDisk)
 	}

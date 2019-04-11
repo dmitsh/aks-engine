@@ -251,7 +251,7 @@ func RunCommandMultipleTimes(podRunnerCmd podRunnerCmd, image, name, command str
 		if err != nil {
 			log.Printf("Unable to get logs from pod %s\n", podName)
 		} else {
-			log.Printf("%s\n", string(out[:]))
+			log.Printf("%s\n", string(out))
 		}
 
 		err = p.Delete(3)
@@ -472,13 +472,13 @@ func WaitOnReady(podPrefix, namespace string, successesNeeded int, sleep, durati
 					return
 				}
 				if ready {
-					successCount = successCount + 1
+					successCount++
 					if successCount >= successesNeeded {
 						readyCh <- true
 					}
 				} else {
 					if successCount > 1 {
-						failureCount = failureCount + 1
+						failureCount++
 						if failureCount >= successesNeeded {
 							errCh <- errors.Errorf("Pods from deployment (%s) in namespace (%s) have been checked out as all Ready %d times, but NotReady %d times. This behavior may mean it is in a crashloop", podPrefix, namespace, successCount, failureCount)
 						}
@@ -588,6 +588,83 @@ func (p *Pod) Delete(retries int) error {
 	}
 
 	return kubectlError
+}
+
+// CheckOutboundConnection checks outbound connection for a list of pods.
+func (l *List) CheckOutboundConnection(sleep, duration time.Duration, osType api.OSType) (bool, error) {
+	readyCh := make(chan bool)
+	errCh := make(chan error)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*duration)
+	defer cancel()
+
+	ready := false
+	err := errors.Errorf("Unspecified error")
+	for _, p := range l.Pods {
+		localPod := p
+		go func() {
+			switch osType {
+			case api.Linux:
+				ready, err = localPod.CheckLinuxOutboundConnection(sleep, duration)
+			case api.Windows:
+				ready, err = localPod.CheckWindowsOutboundConnection("www.bing.com", sleep, duration)
+			default:
+				ready, err = false, errors.Errorf("Invalid osType for Pod (%s)", localPod.Metadata.Name)
+			}
+			readyCh <- ready
+			errCh <- err
+		}()
+	}
+
+	readyCount := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return false, errors.Errorf("Timeout exceeded (%s) while waiting for PodList to check outbound internet connection", duration.String())
+		case err = <-errCh:
+			return false, err
+		case ready = <-readyCh:
+			if ready {
+				readyCount++
+				if readyCount == len(l.Pods) {
+					return true, nil
+				}
+			}
+		}
+	}
+}
+
+//ValidateCurlConnection checks curl connection for a list of Linux pods to a specified uri.
+func (l *List) ValidateCurlConnection(uri string, sleep, duration time.Duration) (bool, error) {
+	readyCh := make(chan bool)
+	errCh := make(chan error)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*duration)
+	defer cancel()
+
+	for _, p := range l.Pods {
+		localPod := p
+		go func() {
+			ready, err := localPod.ValidateCurlConnection(uri, sleep, duration)
+			readyCh <- ready
+			errCh <- err
+		}()
+	}
+
+	readyCount := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return false, errors.Errorf("Timeout exceeded (%s) while waiting for PodList to check outbound internet connection", duration.String())
+		case err := <-errCh:
+			return false, err
+		case ready := <-readyCh:
+			if ready {
+				readyCount++
+				if readyCount == len(l.Pods) {
+					return true, nil
+				}
+			}
+		}
+	}
 }
 
 // CheckLinuxOutboundConnection will keep retrying the check if an error is received until the timeout occurs or it passes. This helps us when DNS may not be available for some time after a pod starts.
@@ -895,15 +972,16 @@ func (c *Container) ValidateResources(a api.KubernetesContainerSpec) error {
 	actualCPULimits := c.getCPULimits()
 	actualMemoryRequests := c.getMemoryRequests()
 	actualLimits := c.getMemoryLimits()
-	if expectedCPURequests != "" && expectedCPURequests != actualCPURequests {
+	switch {
+	case expectedCPURequests != "" && expectedCPURequests != actualCPURequests:
 		return errors.Errorf("expected CPU requests %s does not match %s", expectedCPURequests, actualCPURequests)
-	} else if expectedCPULimits != "" && expectedCPULimits != actualCPULimits {
+	case expectedCPULimits != "" && expectedCPULimits != actualCPULimits:
 		return errors.Errorf("expected CPU limits %s does not match %s", expectedCPULimits, actualCPULimits)
-	} else if expectedMemoryRequests != "" && expectedMemoryRequests != actualMemoryRequests {
+	case expectedMemoryRequests != "" && expectedMemoryRequests != actualMemoryRequests:
 		return errors.Errorf("expected Memory requests %s does not match %s", expectedMemoryRequests, actualMemoryRequests)
-	} else if expectedMemoryLimits != "" && expectedMemoryLimits != actualLimits {
+	case expectedMemoryLimits != "" && expectedMemoryLimits != actualLimits:
 		return errors.Errorf("expected Memory limits %s does not match %s", expectedMemoryLimits, actualLimits)
-	} else {
+	default:
 		return nil
 	}
 }
